@@ -12,7 +12,7 @@
         <div class="field">
             <label for="otp_code">Verification Code</label>
             <input type="text" id="otp_code" name="otp_code" class="otp" inputmode="numeric" maxlength="6" pattern="[0-9]{6}" value="{{ old('otp_code') }}" required autofocus autocomplete="one-time-code">
-            <p class="hint">The code is valid for only 5 seconds.</p>
+            <p class="hint">The code is valid for only 5 minutes.</p>
         </div>
 
         <button type="submit" class="primary">Verify Code</button>

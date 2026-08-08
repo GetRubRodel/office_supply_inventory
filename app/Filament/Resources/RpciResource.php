@@ -10,6 +10,10 @@ use App\Models\Supply;
 use App\Models\User;
 use Filament\Forms;
 use Filament\Forms\Form;
+use Filament\Forms\Get;
+use Filament\Forms\Set;
+use Filament\Forms\Components\Actions;
+use Filament\Forms\Components\Actions\Action as FormAction;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Columns\TextColumn;
@@ -18,6 +22,8 @@ use Filament\Forms\Components\Repeater;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Filters\Filter;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Collection;
+use Illuminate\Support\Str;
 use Filament\Notifications\Notification;
 
 class RpciResource extends Resource
@@ -58,6 +64,136 @@ class RpciResource extends Resource
     protected static ?string $navigationGroup = 'Reports';
 
     protected static ?int $navigationSort = 5;
+
+    /**
+     * Merge all active supplies into the given repeater state.
+     *
+     * Items already present in the RPCI (matched by supply_id) are updated in
+     * place with the latest stock quantity and moving average cost from the
+     * Supplies module, while the manually completed physical count fields
+     * (on_hand_per_count, shortage/overage, remarks) are preserved. Supplies
+     * not yet present are appended as new line items with the physical count
+     * fields left blank.
+     *
+     * The returned array preserves the original state keys ("record-{id}" for
+     * persisted items, UUIDs for new rows) so Filament updates existing rows
+     * instead of recreating them.
+     *
+     * @param  array  $existingItems  Current repeater state keyed by item key
+     * @param  Collection<int, Supply>|null  $supplies  Optional pre-fetched supplies
+     * @return array{0: array, 1: int, 2: int} [merged items, added, updated]
+     */
+    public static function mergeActiveSuppliesIntoItems(array $existingItems = [], ?Collection $supplies = null): array
+    {
+        $supplies ??= Supply::with('category')
+            ->where('status', 'active')
+            ->orderBy('name')
+            ->get();
+
+        // Index the existing rows by supply_id (first occurrence wins) so we
+        // refresh them in place instead of ever creating a duplicate entry.
+        $index = [];
+        foreach ($existingItems as $key => $item) {
+            $supplyId = $item['supply_id'] ?? null;
+            if (is_numeric($supplyId) && ! isset($index[(string) $supplyId])) {
+                $index[(string) $supplyId] = $key;
+            }
+        }
+
+        $added = 0;
+        $updated = 0;
+
+        foreach ($supplies as $supply) {
+            $payload = [
+                'supply_id' => (string) $supply->id,
+                'article' => $supply->category?->name ?? '',
+                'description' => $supply->name,
+                'stock_number' => $supply->stock_no,
+                'unit_of_measure' => $supply->unit,
+                'unit_value' => (float) (
+                    $supply->unit_cost > 0
+                        ? $supply->unit_cost
+                        : ($supply->unit_price > 0 ? $supply->unit_price : 0)
+                ),
+                'balance_per_card' => (int) $supply->current_stock,
+            ];
+
+            $supplyId = (string) $supply->id;
+
+            if (isset($index[$supplyId])) {
+                $key = $index[$supplyId];
+
+                // Refresh the supply-sourced fields, keep the manual count data.
+                $existingItems[$key] = [
+                    ...($existingItems[$key] ?? []),
+                    ...$payload,
+                ];
+                $updated++;
+            } else {
+                // New line item — physical count fields intentionally blank.
+                $existingItems[(string) Str::uuid()] = [
+                    ...$payload,
+                    'on_hand_per_count' => null,
+                    'shortage_quantity' => null,
+                    'shortage_value' => null,
+                    'remarks' => '',
+                ];
+                $added++;
+            }
+        }
+
+        // Collapse any pre-existing duplicate rows for the same supply so an
+        // RPCI record never holds the same inventory item twice. The first
+        // occurrence (already refreshed above) wins; later duplicates are
+        // dropped and get cleaned up on the next save.
+        $seen = [];
+        $collapsed = [];
+        foreach ($existingItems as $key => $item) {
+            $supplyId = $item['supply_id'] ?? null;
+
+            if (is_numeric($supplyId) && isset($seen[(string) $supplyId])) {
+                continue;
+            }
+
+            if (is_numeric($supplyId)) {
+                $seen[(string) $supplyId] = true;
+            }
+
+            $collapsed[$key] = $item;
+        }
+        $existingItems = $collapsed;
+
+        // Re-sequence sort_order to match the on-screen order of the rows.
+        $order = 1;
+        foreach ($existingItems as &$item) {
+            $item['sort_order'] = $order++;
+        }
+        unset($item);
+
+        return [$existingItems, $added, $updated];
+    }
+
+    /**
+     * Build the success notification message for the retrieval action.
+     */
+    public static function retrieveSummary(int $added, int $updated): string
+    {
+        $parts = [];
+
+        if ($added > 0) {
+            $parts[] = "Added {$added} new item(s)";
+        }
+
+        if ($updated > 0) {
+            $parts[] = "Updated {$updated} existing item(s) with the latest stock and cost data";
+        }
+
+        if ($parts === []) {
+            return 'All inventory items are already up to date.';
+        }
+
+        return implode(' and ', $parts) . ' from the Supplies module.';
+    }
 
     protected static ?string $recordTitleAttribute = 'report_no';
 
@@ -116,6 +252,51 @@ class RpciResource extends Resource
                             ]),
                     ]),
 
+                // ─── RETRIEVE INVENTORY ITEMS SECTION ───────────────
+                Forms\Components\Section::make('Retrieve Inventory Items')
+                    ->description('Load all active inventory items from the Supplies module as the initial listing for the physical count. Existing items are refreshed with the latest stock quantity and moving average cost; your physical count entries are preserved.')
+                    ->schema([
+                        Forms\Components\Placeholder::make('retrieve_info')
+                            ->label('')
+                            ->content('Click "Retrieve All Items" to import the latest inventory data. The physical count fields (On Hand Per Count, Shortage/Overage, Remarks) are left blank so they can be completed manually after the actual count.'),
+                        Actions::make([
+                            FormAction::make('retrieveAllItems')
+                                ->label('Retrieve All Items')
+                                ->icon('heroicon-o-arrow-down-tray')
+                                ->color('primary')
+                                ->button()
+                                ->action(function (Get $get, Set $set): void {
+                                    $supplies = Supply::with('category')
+                                        ->where('status', 'active')
+                                        ->orderBy('name')
+                                        ->get();
+
+                                    if ($supplies->isEmpty()) {
+                                        Notification::make()
+                                            ->warning()
+                                            ->title('No Inventory Items')
+                                            ->body('No inventory items are available in the Supplies module.')
+                                            ->send();
+
+                                        return;
+                                    }
+
+                                    [$items, $added, $updated] = static::mergeActiveSuppliesIntoItems(
+                                        $get('items') ?? [],
+                                        $supplies,
+                                    );
+
+                                    $set('items', $items);
+
+                                    Notification::make()
+                                        ->success()
+                                        ->title('Inventory Items Retrieved')
+                                        ->body(static::retrieveSummary($added, $updated))
+                                        ->send();
+                                }),
+                        ]),
+                    ]),
+
                 // ─── INVENTORY ITEMS SECTION ───────────────────────
                 Forms\Components\Section::make('Inventory Items')
                     ->schema([
@@ -138,6 +319,7 @@ class RpciResource extends Resource
                                             })
                                             ->searchable()
                                             ->live()
+                                            ->distinct()
                                             ->afterStateUpdated(function ($state, callable $set) {
                                                 if ($state) {
                                                     /** @var \App\Models\Supply|null $supply */
@@ -153,6 +335,7 @@ class RpciResource extends Resource
                                                                 : ($supply->unit_price > 0 ? $supply->unit_price : 0)
                                                         );
                                                         $set('unit_value', $unitValue);
+                                                        $set('balance_per_card', (int) $supply->current_stock);
                                                     }
                                                 }
                                             })
@@ -199,12 +382,20 @@ class RpciResource extends Resource
                                         Forms\Components\TextInput::make('on_hand_per_count')
                                             ->label('On Hand Per Count')
                                             ->numeric()
-                                            ->default(0)
+                                            ->nullable()
                                             ->columnSpan(1)
                                             ->live(onBlur: true)
                                             ->afterStateUpdated(function ($state, callable $set, callable $get) {
+                                                // No physical count recorded yet — keep the shortage fields blank.
+                                                if ($state === null || $state === '') {
+                                                    $set('shortage_quantity', null);
+                                                    $set('shortage_value', null);
+
+                                                    return;
+                                                }
+
                                                 $bpc = (int) ($get('balance_per_card') ?? 0);
-                                                $qty = (int) ($state ?? 0);
+                                                $qty = (int) $state;
                                                 $diff = $bpc - $qty;
                                                 $set('shortage_quantity', $diff);
                                                 $set('shortage_value', round($diff * (float) ($get('unit_value') ?? 0), 2));
@@ -212,12 +403,14 @@ class RpciResource extends Resource
                                         Forms\Components\TextInput::make('shortage_quantity')
                                             ->label('S/O Qty')
                                             ->numeric()
+                                            ->nullable()
                                             ->disabled()
                                             ->dehydrated()
                                             ->columnSpan(1),
                                         Forms\Components\TextInput::make('shortage_value')
                                             ->label('S/O Value')
                                             ->numeric()
+                                            ->nullable()
                                             ->disabled()
                                             ->dehydrated()
                                             ->prefix('₱')
@@ -234,15 +427,6 @@ class RpciResource extends Resource
                             ->reorderableWithButtons()
                             ->cloneable()
                             ->collapsible(),
-                    ]),
-
-                // ─── LOAD INVENTORY ITEMS BUTTON ───────────────────
-                Forms\Components\Section::make('Load Inventory Items')
-                    ->description('Click the button below to load all active supplies from the inventory as line items. This will replace any existing items.')
-                    ->schema([
-                        Forms\Components\Placeholder::make('load_items_info')
-                            ->label('')
-                            ->content('This will replace any existing items with the current active inventory list.'),
                     ]),
 
                 // ─── CERTIFICATION SECTION ─────────────────────────

@@ -6,8 +6,6 @@ use App\Support\CurrentUser;
 
 use App\Filament\Resources\RpciResource;
 use App\Models\Rpci;
-use App\Models\RpciItem;
-use App\Models\Supply;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\CreateRecord;
 
@@ -21,22 +19,26 @@ class CreateRpci extends CreateRecord
     }
 
     /**
-     * Auto-populate items from active supplies on mount, set defaults.
+     * Set header defaults. Inventory items are intentionally NOT auto-populated
+     * here — the "Retrieve All Items" button on the form imports the latest
+     * inventory from the Supplies module as the initial listing.
      */
     public function mount(): void
     {
         parent::mount();
 
         $this->form->fill([
-            'items' => $this->getInventoryItems(),
             'inventory_type' => 'Common-Office Supplies',
             'status' => 'draft',
             'created_by' => CurrentUser::get()?->name,
+            // form->fill() replaces the whole state, so re-apply the
+            // report_date default that would otherwise be lost.
+            'report_date' => now()->format('Y-m-d'),
         ]);
     }
 
     /**
-     * Before saving, check for duplicates.
+     * Before saving, check for duplicate reports.
      */
     protected function mutateFormDataBeforeCreate(array $data): array
     {
@@ -55,11 +57,6 @@ class CreateRpci extends CreateRecord
             $this->halt();
         }
 
-        // Ensure items are populated
-        if (! isset($data['items']) || count($data['items']) === 0) {
-            $data['items'] = $this->getInventoryItems();
-        }
-
         // Set created_by if not set
         if (empty($data['created_by'])) {
             $data['created_by'] = CurrentUser::get()?->name;
@@ -69,46 +66,9 @@ class CreateRpci extends CreateRecord
     }
 
     /**
-     * Get all active supplies as default RPCI items, sorted by category then name.
-     */
-    protected function getInventoryItems(): array
-    {
-        $supplies = Supply::with('category')
-            ->where('status', 'active')
-            ->orderBy('name')
-            ->get();
-
-        $items = [];
-        $sortOrder = 1;
-
-        foreach ($supplies as $supply) {
-            $unitValue = (float) (
-                $supply->unit_cost > 0
-                    ? $supply->unit_cost
-                    : ($supply->unit_price > 0 ? $supply->unit_price : 0)
-            );
-
-            $items[] = [
-                'supply_id' => $supply->id,
-                'article' => $supply->category?->name ?? '',
-                'description' => $supply->name,
-                'stock_number' => $supply->stock_no,
-                'unit_of_measure' => $supply->unit,
-                'unit_value' => $unitValue,
-                'balance_per_card' => $supply->current_stock,
-                'on_hand_per_count' => $supply->current_stock,
-                'shortage_quantity' => 0,
-                'shortage_value' => 0,
-                'remarks' => '',
-                'sort_order' => $sortOrder++,
-            ];
-        }
-
-        return $items;
-    }
-
-    /**
      * After creating the record, compute shortage/overage for each item.
+     * Items with a blank physical count (on_hand_per_count = null) keep their
+     * shortage fields blank.
      */
     protected function afterCreate(): void
     {

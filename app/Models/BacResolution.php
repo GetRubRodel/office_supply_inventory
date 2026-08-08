@@ -5,10 +5,17 @@ namespace App\Models;
 use App\Models\Concerns\HasEditingLock;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Validation\ValidationException;
 
 class BacResolution extends Model
 {
     use HasEditingLock;
+
+    /**
+     * Displayed whenever no Inspection and Acceptance Report (IAR) is
+     * available to be converted into a BAC Resolution.
+     */
+    public const NO_ELIGIBLE_IAR_MESSAGE = 'No Inspection and Acceptance Report (IAR) is available. Please create an IAR before creating a BAC Resolution.';
 
     protected $fillable = [
         'iar_id',
@@ -32,10 +39,21 @@ class BacResolution extends Model
         'member3_designation',
         'approved_by_name',
         'approved_by_designation',
+        // Snapshot of the source IAR (auto-populated, not user-editable)
+        'iar_no',
+        'po_no',
+        'supplier_name',
+        'inspection_date',
+        'acceptance_date',
+        'acceptance_details',
+        'items_snapshot',
     ];
 
     protected $casts = [
         'date' => 'date',
+        'inspection_date' => 'date',
+        'acceptance_date' => 'date',
+        'items_snapshot' => 'array',
         'editing_started_at' => 'datetime',
     ];
 
@@ -49,6 +67,17 @@ class BacResolution extends Model
 
         static::creating(function (BacResolution $bac) {
             $bac->resolution_no = static::generateNextResolutionNo();
+            $bac->assertValidIarSource();
+            $bac->hydrateFromIar();
+        });
+
+        static::updating(function (BacResolution $bac) {
+            // The source IAR cannot be swapped once the record exists; if it
+            // somehow is, re-validate and re-hydrate the snapshot.
+            if ($bac->isDirty('iar_id')) {
+                $bac->assertValidIarSource();
+                $bac->hydrateFromIar();
+            }
         });
     }
 
@@ -107,6 +136,84 @@ class BacResolution extends Model
     public function iar(): BelongsTo
     {
         return $this->belongsTo(InspectionAcceptanceReport::class, 'iar_id');
+    }
+
+    /**
+     * Backend guard: a BAC Resolution MUST be created from an existing,
+     * still-eligible IAR. Throws when the source is missing, already used,
+     * or no longer exists. Runs on every create (and on iar_id change) so
+     * direct URLs, API calls and manual form submissions are all blocked.
+     */
+    public function assertValidIarSource(): void
+    {
+        if (! $this->iar_id) {
+            throw ValidationException::withMessages([
+                'iar_id' => 'A BAC Resolution must be created from an existing Inspection and Acceptance Report (IAR).',
+            ]);
+        }
+
+        $iar = $this->iar()->first();
+
+        if (! $iar) {
+            throw ValidationException::withMessages([
+                'iar_id' => 'The selected Inspection and Acceptance Report (IAR) no longer exists.',
+            ]);
+        }
+
+        if ($iar->bacResolutions()->whereKeyNot($this->id)->exists()) {
+            throw ValidationException::withMessages([
+                'iar_id' => 'This Inspection and Acceptance Report (IAR) has already been converted into a BAC Resolution.',
+            ]);
+        }
+    }
+
+    /**
+     * Automatically retrieve and populate all relevant information from the
+     * linked IAR: IAR number, PO number, supplier, inspection/acceptance
+     * details and a per-item snapshot (description, quantity, unit, unit
+     * cost, total amount).
+     */
+    public function hydrateFromIar(): void
+    {
+        if (! $this->iar_id) {
+            return;
+        }
+
+        $iar = $this->iar()->with('items')->first();
+
+        if (! $iar) {
+            return;
+        }
+
+        $this->iar_no = $iar->iar_no;
+        $this->po_no = $iar->po_no;
+        $this->supplier_name = $iar->supplier_name;
+        $this->inspection_date = $iar->inspection_date;
+        $this->acceptance_date = $iar->acceptance_date;
+        $this->acceptance_details = $iar->acceptanceSummary();
+        $this->items_snapshot = $iar->items->map(function (IarItem $item) {
+            $quantity = (int) ($item->quantity_accepted ?: $item->quantity);
+            $unitCost = (float) $item->unit_cost;
+
+            return [
+                'stock_no' => $item->stock_no,
+                'description' => $item->description,
+                'quantity' => $quantity,
+                'unit' => $item->unit,
+                'unit_cost' => $unitCost,
+                'total' => round($quantity * $unitCost, 2),
+            ];
+        })->values()->toArray();
+    }
+
+    /**
+     * Grand total of the source IAR snapshot (sum of per-item totals).
+     */
+    public function getTotalAmount(): ?float
+    {
+        $items = is_array($this->items_snapshot) ? $this->items_snapshot : [];
+
+        return round(array_sum(array_column($items, 'total')), 2);
     }
 
     public function getDisplayResolutionNo(): string

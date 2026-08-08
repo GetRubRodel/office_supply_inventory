@@ -30,6 +30,7 @@
         .header .appendix {
             font-size: 8pt;
             font-weight: bold;
+            text-align: right;
         }
         .header .title {
             font-size: 13pt;
@@ -278,16 +279,20 @@
                     <td>{{ $unitOfMeasure }}</td>
                     <td class="right">{{ number_format($unitValue, 2) }}</td>
                     <td>{{ number_format($item->balance_per_card) }}</td>
-                    <td>{{ number_format($item->on_hand_per_count) }}</td>
+                    <td>{{ $item->on_hand_per_count !== null ? number_format($item->on_hand_per_count) : '' }}</td>
                     <td>
-                        @php $sq = (int) $item->shortage_quantity; @endphp
-                        @if($sq > 0)
-                            ({{ number_format($sq) }})
+                        @if ($item->shortage_quantity === null)
+                            {{ '' }}
                         @else
-                            {{ number_format($sq) }}
+                            @php $sq = (int) $item->shortage_quantity; @endphp
+                            @if($sq > 0)
+                                ({{ number_format($sq) }})
+                            @else
+                                {{ number_format($sq) }}
+                            @endif
                         @endif
                     </td>
-                    <td class="right">{{ number_format($item->shortage_value, 2) }}</td>
+                    <td class="right">{{ $item->shortage_value !== null ? number_format($item->shortage_value, 2) : '' }}</td>
                     <td class="left">{{ $item->remarks }}</td>
                 </tr>
                 @empty

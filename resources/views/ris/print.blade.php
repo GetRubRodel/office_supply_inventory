@@ -26,6 +26,7 @@
         .header .appendix {
             font-size: 10pt;
             font-weight: bold;
+            text-align: right;
         }
         .header .title {
             font-size: 14pt;

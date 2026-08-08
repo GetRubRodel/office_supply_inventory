@@ -6,11 +6,14 @@ use App\Support\CurrentUser;
 
 use App\Filament\Resources\BacResolutionResource\Pages;
 use App\Models\BacResolution;
+use App\Models\InspectionAcceptanceReport;
 use Filament\Forms;
 use Filament\Forms\Form;
+use Filament\Forms\Get;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
 
 class BacResolutionResource extends Resource
 {
@@ -24,7 +27,20 @@ class BacResolutionResource extends Resource
         $user = CurrentUser::get();
         if (! $user) return false;
 
-        return $user->hasPermissionTo('bac_resolutions.create');
+        return $user->hasPermissionTo('bac_resolutions.create')
+            && static::hasEligibleIar();
+    }
+
+    /**
+     * A BAC Resolution can only be created when at least one Inspection and
+     * Acceptance Report (IAR) exists that has not yet been converted into a
+     * BAC Resolution.
+     */
+    public static function hasEligibleIar(): bool
+    {
+        return InspectionAcceptanceReport::query()
+            ->whereDoesntHave('bacResolutions')
+            ->exists();
     }
 
     public static function canEdit(mixed $record = null): bool
@@ -63,6 +79,47 @@ class BacResolutionResource extends Resource
 
         return $form
             ->schema([
+                Forms\Components\Section::make('Source Inspection and Acceptance Report (IAR)')
+                    ->description('A BAC Resolution is created from an existing IAR. Only IARs that have not yet been converted into a BAC Resolution can be selected — the details below are loaded automatically from the selected IAR.')
+                    ->schema([
+                        Forms\Components\Select::make('iar_id')
+                            ->label('Source IAR')
+                            ->placeholder('Select an eligible IAR to load its details...')
+                            ->required(fn (string $operation): bool => $operation === 'create')
+                            ->disabled(fn (string $operation): bool => $operation === 'edit')
+                            ->searchable()
+                            ->live()
+                            ->options(function (?BacResolution $record): array {
+                                return InspectionAcceptanceReport::query()
+                                    ->withCount(['items', 'bacResolutions'])
+                                    ->where(function (Builder $query) use ($record) {
+                                        $query->whereDoesntHave('bacResolutions');
+
+                                        // Keep the already-linked IAR selectable so the
+                                        // label resolves on edit/view pages.
+                                        if ($record?->iar_id) {
+                                            $query->orWhere('id', $record->iar_id);
+                                        }
+                                    })
+                                    ->orderByDesc('created_at')
+                                    ->get()
+                                    ->mapWithKeys(function (InspectionAcceptanceReport $iar) {
+                                        $converted = $iar->bac_resolutions_count > 0 ? ' — Converted' : '';
+
+                                        return [$iar->id => "{$iar->iar_no} — {$iar->supplier_name} ({$iar->items_count} items){$converted}"];
+                                    })
+                                    ->all();
+                            })
+                            ->validationMessages([
+                                'required' => 'Please select the Inspection and Acceptance Report (IAR) to convert.',
+                            ])
+                            ->columnSpanFull(),
+                        Forms\Components\Placeholder::make('iar_details_preview')
+                            ->label('IAR Details')
+                            ->content(fn (Get $get) => view('bac.iar-preview', ['iarId' => $get('iar_id')]))
+                            ->columnSpanFull(),
+                    ]),
+
                 Forms\Components\Section::make('BIDS AND AWARDS COMMITTEE (BAC)')
                     ->description('Resolution')
                     ->schema([

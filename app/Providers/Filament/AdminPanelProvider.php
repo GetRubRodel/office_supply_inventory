@@ -41,15 +41,13 @@ class AdminPanelProvider extends PanelProvider
             ->id('admin')
             ->path('admin')
             ->brandName('Web-Based Supply Management and Procurement System')
-            ->brandLogo(
-                new HtmlString(
-                    '<div style="display: flex; align-items: center; gap: 0.75rem;">' .
-                        '<img src="' . asset('images/logo.png') . '" alt="System Logo" style="height: 2.5rem; width: auto; object-fit: contain; flex-shrink: 0;" />' .
-                        '<span class="dark:hidden" style="font-size: 0.75rem; font-weight: 700; line-height: 1.4; color: #111827; overflow-wrap: break-word;">Web-Based Supply Management and Procurement System</span>' .
-                        '<span class="hidden dark:block" style="font-size: 0.75rem; font-weight: 700; line-height: 1.4; color: #f9fafb; overflow-wrap: break-word;">Web-Based Supply Management and Procurement System</span>' .
-                    '</div>'
-                )
-            )
+            ->brandLogo(fn (): HtmlString => new HtmlString(
+                '<div style="display: flex; align-items: center; gap: 0.75rem;">' .
+                    '<img src="' . asset('images/logo.png') . '" alt="System Logo" style="height: 2.5rem; width: auto; object-fit: contain; flex-shrink: 0;" />' .
+                    '<span class="dark:hidden" style="font-size: 0.75rem; font-weight: 700; line-height: 1.4; color: #111827; overflow-wrap: break-word;">Web-Based Supply Management and Procurement System</span>' .
+                    '<span class="hidden dark:block" style="font-size: 0.75rem; font-weight: 700; line-height: 1.4; color: #f9fafb; overflow-wrap: break-word;">Web-Based Supply Management and Procurement System</span>' .
+                '</div>'
+            ))
             ->brandLogoHeight('auto')
             ->login(Login::class)
             ->registration(Register::class)

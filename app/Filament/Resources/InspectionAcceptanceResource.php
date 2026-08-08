@@ -292,7 +292,11 @@ class InspectionAcceptanceResource extends Resource
 
     public static function getEloquentQuery(): \Illuminate\Database\Eloquent\Builder
     {
-        return parent::getEloquentQuery()->with('items.supply');
+        return parent::getEloquentQuery()
+            ->with('items.supply')
+            // Eager-load the BAC conversion count so the "BAC Status" column
+            // can mark IARs as "Converted to BAC" without N+1 queries.
+            ->withCount('bacResolutions');
     }
 
     public static function table(Table $table): Table
@@ -332,6 +336,17 @@ class InspectionAcceptanceResource extends Resource
                     ->formatStateUsing(fn ($state) => ucfirst(str_replace('_', ' ', $state)))
                     ->color(fn (InspectionAcceptanceReport $record): string => $record->statusBadgeColor())
                     ->sortable(),
+                Tables\Columns\TextColumn::make('bac_resolutions_count')
+                    ->label('BAC Status')
+                    ->badge()
+                    ->formatStateUsing(fn (InspectionAcceptanceReport $record): string =>
+                        ($record->bac_resolutions_count ?? 0) > 0 ? 'Converted to BAC' : 'Eligible')
+                    ->color(fn (InspectionAcceptanceReport $record): string =>
+                        ($record->bac_resolutions_count ?? 0) > 0 ? 'success' : 'gray')
+                    ->icon(fn (InspectionAcceptanceReport $record): ?string =>
+                        ($record->bac_resolutions_count ?? 0) > 0 ? 'heroicon-o-check-badge' : null)
+                    ->description(fn (InspectionAcceptanceReport $record): ?string =>
+                        ($record->bac_resolutions_count ?? 0) > 0 ? 'IAR already used' : 'Available to convert'),
                 Tables\Columns\IconColumn::make('inspection_complete')
                     ->label('Insp. Complete')
                     ->boolean()

@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -81,6 +82,58 @@ class InspectionAcceptanceReport extends Model
     public function stockedInBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'stocked_in_by_user_id');
+    }
+
+    /**
+     * BAC Resolutions created from this IAR.
+     *
+     * An IAR is considered "Converted to BAC Resolution" when at least one
+     * BAC Resolution references it via this relationship.
+     */
+    public function bacResolutions(): HasMany
+    {
+        return $this->hasMany(BacResolution::class, 'iar_id');
+    }
+
+    /**
+     * Whether this IAR has already been converted into a BAC Resolution.
+     */
+    public function isConvertedToBac(): bool
+    {
+        return $this->bacResolutions()->exists();
+    }
+
+    /**
+     * Only IARs that have not yet been converted into a BAC Resolution are
+     * eligible to be used as the source document for a new BAC Resolution.
+     */
+    public function scopeEligibleForBacConversion(Builder $query): Builder
+    {
+        return $query->whereDoesntHave('bacResolutions');
+    }
+
+    /**
+     * Human-readable summary of the inspection / acceptance details,
+     * e.g. "COMPLETE INSPECTION; COMPLETE ACCEPTANCE".
+     */
+    public function acceptanceSummary(): string
+    {
+        $parts = [];
+
+        if ($this->inspection_complete) {
+            $parts[] = 'COMPLETE INSPECTION';
+        }
+        if ($this->inspection_partial) {
+            $parts[] = 'PARTIAL INSPECTION';
+        }
+        if ($this->acceptance_complete) {
+            $parts[] = 'COMPLETE ACCEPTANCE';
+        }
+        if ($this->acceptance_partial) {
+            $parts[] = 'PARTIAL ACCEPTANCE';
+        }
+
+        return implode('; ', $parts) ?: '—';
     }
 
     /**

@@ -341,7 +341,7 @@ class RequisitionResource extends Resource
             ])
             ->defaultSort('created_at', 'desc')
             ->modifyQueryUsing(function (Builder $query) {
-                $user = Auth::user();
+                $user = CurrentUser::get();
                 if (! $user) return;
 
                 // Staff: own records only
