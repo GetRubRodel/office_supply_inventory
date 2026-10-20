@@ -7,6 +7,7 @@
         @page {
             size: A4 portrait;
             margin: 12mm;
+            width: 210mm;
         }
 
         body {
@@ -120,26 +121,30 @@
     </style>
 </head>
 <body>
+    {{--
+        This view is the RSMI reference output. The Download action renders the
+        same App\Services\RsmiReportService payload through PhpWord, so the two
+        must stay structurally identical: same labels (shared constants), same
+        row order, same totals, same timestamps (shared ReportClock).
+    --}}
+    @php
+        $svc = app(App\Services\RsmiReportService::class);
+    @endphp
+
     <div class="header">
-        <h5 style="text-align: right; margin: 0; font-style: italic;">Appendix 64</h5>
-        <h1>Report of Supplies and Materials Issued</h1>
+        <h5 style="text-align: right; margin: 0; font-style: italic;">{{ App\Services\RsmiReportService::APPENDIX }}</h5>
+        <h1>{{ App\Services\RsmiReportService::TITLE }}</h1>
         <div class="header-info">
-            <span><strong>Entity Name:</strong> COMMISSION ON HUMAN RIGHTS XII</span>
-            <span><strong>Fund Cluster:</strong> Regular Agency Fund</span>
+            <span><strong>Entity Name:</strong> {{ App\Services\RsmiReportService::ENTITY_NAME }}</span>
+            <span><strong>Fund Cluster:</strong> {{ App\Services\RsmiReportService::FUND_CLUSTER }}</span>
         </div>
-        @if($dateFrom || $dateTo)
+        @if($report['period_label'])
         <div class="header-info">
-            @if($dateFrom && $dateTo)
-                <span><strong>Period:</strong> {{ \Carbon\Carbon::parse($dateFrom)->format('F d, Y') }} - {{ \Carbon\Carbon::parse($dateTo)->format('F d, Y') }}</span>
-            @elseif($dateFrom)
-                <span><strong>From:</strong> {{ \Carbon\Carbon::parse($dateFrom)->format('F d, Y') }}</span>
-            @elseif($dateTo)
-                <span><strong>To:</strong> {{ \Carbon\Carbon::parse($dateTo)->format('F d, Y') }}</span>
-            @endif
+            <span><strong>{{ $report['period_label'] }}</strong> {{ $report['period'] }}</span>
         </div>
         @endif
         <div class="header-info">
-            <span><strong>Generated:</strong> {{ now()->format('F d, Y h:i A') }}</span>
+            <span><strong>Generated:</strong> {{ $report['generated_at'] }} (PST)</span>
         </div>
     </div>
 
@@ -147,15 +152,15 @@
         <thead>
             <tr>
                 <th colspan="8" style="text-align:center; font-size:12pt;">
-                    REPORT OF SUPPLIES AND MATERIALS ISSUED
+                    {{ App\Services\RsmiReportService::TITLE }}
                 </th>
             </tr>
             <tr>
                 <th colspan="6" style="text-align:left;">
-                    To be filled up by the Supply and/or Property Division/Unit
+                    {{ App\Services\RsmiReportService::SUPPLY_NOTE }}
                 </th>
                 <th colspan="2" style="text-align:left;">
-                    To be filled up by the Accounting Division/Unit
+                    {{ App\Services\RsmiReportService::ACCOUNTING_NOTE }}
                 </th>
             </tr>
             <tr>
@@ -170,23 +175,16 @@
             </tr>
         </thead>
         <tbody>
-            @php $grandTotal = 0; @endphp
-
-            @forelse($items as $transaction)
-                @php
-                    $unitCost = (float) ($transaction->price ?? $transaction->supply?->unit_price ?? 0);
-                    $amount = $transaction->quantity_issued * $unitCost;
-                    $grandTotal += $amount;
-                @endphp
+            @forelse($report['items'] as $row)
                 <tr>
-                    <td class="text-center">{{ $transaction->requisition?->ris_no ?? '-' }}</td>
-                    <td class="text-center">{{ $transaction->requisition?->responsibility_center_code ?? '-' }}</td>
-                    <td class="text-center">{{ $transaction->supply?->stock_no ?? $transaction->stock_no ?? '-' }}</td>
-                    <td class="text-center">{{ $transaction->supply?->name ?? $transaction->description ?? 'N/A' }}</td>
-                    <td class="text-center">{{ $transaction->supply?->unit ?? $transaction->unit ?? '-' }}</td>
-                    <td class="text-center">{{ number_format((int) $transaction->quantity_issued) }}</td>
-                    <td class="text-right">{{ number_format($unitCost, 2) }}</td>
-                    <td class="text-right">{{ number_format($amount, 2) }}</td>
+                    <td class="text-center">{{ $row['ris_no'] }}</td>
+                    <td class="text-center">{{ $row['responsibility_center_code'] }}</td>
+                    <td class="text-center">{{ $row['stock_no'] }}</td>
+                    <td class="text-center">{{ $row['item_description'] }}</td>
+                    <td class="text-center">{{ $row['unit'] }}</td>
+                    <td class="text-center">{{ $row['quantity'] }}</td>
+                    <td class="text-right">{{ $row['unit_cost'] }}</td>
+                    <td class="text-right">{{ $row['amount'] }}</td>
                 </tr>
             @empty
                 <tr>
@@ -196,9 +194,9 @@
 
             <tr class="total-row">
                 <td colspan="5"><strong>Grand Total</strong></td>
-                <td class="text-center"><strong>{{ number_format($items->sum('quantity_issued')) }}</strong></td>
+                <td class="text-center"><strong>{{ $report['grand_total_qty'] }}</strong></td>
                 <td></td>
-                <td class="text-right"><strong>{{ number_format($grandTotal, 2) }}</strong></td>
+                <td class="text-right"><strong>{{ $report['grand_total_amount'] }}</strong></td>
             </tr>
 
             <tr>
@@ -209,40 +207,30 @@
                 <td colspan="8" style="font-weight:bold; text-align: center">Recapitulation</td>
             </tr>
             <tr>
-                <th colspan="2">Stock No.</th>
-                <th colspan="2">Quantity</th>
-                <th colspan="2">Unit Cost</th>
-                <th colspan="2">Total Cost</th>
+                <th colspan="2">{{ App\Services\RsmiReportService::RECAP_HEADERS[0] }}</th>
+                <th colspan="2">{{ App\Services\RsmiReportService::RECAP_HEADERS[1] }}</th>
+                <th colspan="2">{{ App\Services\RsmiReportService::RECAP_HEADERS[2] }}</th>
+                <th colspan="2">{{ App\Services\RsmiReportService::RECAP_HEADERS[3] }}</th>
             </tr>
 
-            @php
-                $totalQty = 0;
-                $totalCost = 0;
-            @endphp
-
-            @foreach($recapitulation as $item)
-                @php
-                    $cost = $item['unit_cost'] * $item['quantity'];
-                    $totalQty += $item['quantity'];
-                    $totalCost += $cost;
-                @endphp
+            @foreach($report['recapitulation'] as $item)
                 <tr>
                     <td colspan="2" class="text-center">{{ $item['stock_number'] }}</td>
                     <td colspan="2" class="text-center">{{ number_format($item['quantity']) }}</td>
-                    <td colspan="2" class="text-right">{{ number_format($item['unit_cost'], 2) }}</td>
-                    <td colspan="2" class="text-right">{{ number_format($cost, 2) }}</td>
+                    <td colspan="2" class="text-right">{{ $item['unit_cost'] }}</td>
+                    <td colspan="2" class="text-right">{{ $item['total_cost'] }}</td>
                 </tr>
             @endforeach
 
             <tr class="total-row">
                 <td colspan="2"><strong>Total</strong></td>
-                <td colspan="2" class="text-center"><strong>{{ number_format($totalQty) }}</strong></td>
+                <td colspan="2" class="text-center"><strong>{{ $report['recap_total_qty'] }}</strong></td>
                 <td colspan="2"></td>
-                <td colspan="2" class="text-right"><strong>{{ number_format($totalCost, 2) }}</strong></td>
+                <td colspan="2" class="text-right"><strong>{{ $report['recap_total_cost'] }}</strong></td>
             </tr>
             <tr class="total-row">
                 <td colspan="6" style="text-align: right;"><strong>Overall Total Cost</strong></td>
-                <td colspan="2" class="text-right"><strong>{{ number_format($totalCost, 2) }}</strong></td>
+                <td colspan="2" class="text-right"><strong>{{ $report['recap_total_cost'] }}</strong></td>
             </tr>
 
             <tr>
@@ -251,19 +239,20 @@
 
             <tr>
                 <td colspan="4" class="text-center">
+                    <div style="text-align: left;">{{ App\Services\RsmiReportService::CERTIFICATION }}</div>
                     <div style="margin-top:40px;">
                         <div style="border-top:1px solid #000; display:inline-block; min-width:200px;">
-                            {{ $issuedBy ?? '________________________' }}
+                            {{ $report['issued_by'] ?? '________________________' }}
                         </div>
-                        <div>Supply Officer / Property Custodian</div>
+                        <div>{{ App\Services\RsmiReportService::CUSTODIAN_LABEL }}</div>
                     </div>
                 </td>
                 <td colspan="4" class="text-center">
                     <div style="margin-top:40px;">
                         <div style="border-top:1px solid #000; display:inline-block; min-width:200px;">
-                           Name: ________________________
+                           Ana Fe B. Galanto
                         </div>
-                        <div>Designated Accounting Staff</div>
+                        <div>{{ App\Services\RsmiReportService::ACCOUNTING_STAFF_LABEL }}</div>
                     </div>
                 </td>
             </tr>

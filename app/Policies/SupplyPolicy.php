@@ -27,6 +27,11 @@ class SupplyPolicy
 
     public function update(User $user, Supply $supply): bool
     {
+        // Division Chief may not update Supply records.
+        if ($user->isDivisionChief()) {
+            return false;
+        }
+
         return $user->hasPermissionTo('supplies.update');
     }
 

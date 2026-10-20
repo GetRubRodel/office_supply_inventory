@@ -16,10 +16,11 @@ class ListRequisitions extends ListRecords
     protected function getHeaderActions(): array
     {
         return [
-            Actions\CreateAction::make()
-                ->visible(fn (): bool =>
-                    ! CurrentUser::get()?->isRegionalDirector()
-                    && ! CurrentUser::get()?->isDivisionChief()),
+            // The Create button is governed by the resource's canCreate()
+            // permission gate (requisitions.create). Every authenticated role
+            // — including Division Chief and Regional Director — holds the
+            // permission, so each user can create and submit their own RIS.
+            Actions\CreateAction::make(),
         ];
     }
 

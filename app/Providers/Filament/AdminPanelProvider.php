@@ -41,22 +41,28 @@ class AdminPanelProvider extends PanelProvider
             ->id('admin')
             ->path('admin')
             ->brandName('Web-Based Supply Management and Procurement System')
-            ->brandLogo(
-                new HtmlString(
-                    '<div style="display: flex; align-items: center; gap: 0.75rem;">' .
-                        '<img src="' . asset('images/logo.png') . '" alt="System Logo" style="height: 2.5rem; width: auto; object-fit: contain; flex-shrink: 0;" />' .
-                        '<span class="dark:hidden" style="font-size: 0.75rem; font-weight: 700; line-height: 1.4; color: #111827; overflow-wrap: break-word;">Web-Based Supply Management and Procurement System</span>' .
-                        '<span class="hidden dark:block" style="font-size: 0.75rem; font-weight: 700; line-height: 1.4; color: #f9fafb; overflow-wrap: break-word;">Web-Based Supply Management and Procurement System</span>' .
-                    '</div>'
-                )
-            )
+            ->brandLogo(fn (): HtmlString => new HtmlString(
+                '<div style="display: flex; align-items: center; gap: 0.75rem;">' .
+                    '<picture style="display: inline-flex; flex-shrink: 0;">' .
+                        '<source srcset="' . asset('images/logo.avif') . '" type="image/avif">' .
+                        '<source srcset="' . asset('images/logo.webp') . '" type="image/webp">' .
+                        '<img src="' . asset('images/logo.png') . '" alt="System Logo" width="40" height="40" style="height: 2.5rem; width: auto; object-fit: contain;" decoding="async" />' .
+                    '</picture>' .
+                    '<span class="dark:hidden" style="font-size: 0.75rem; font-weight: 700; line-height: 1.4; color: #111827; overflow-wrap: break-word;">Web-Based Supply Management and Procurement System</span>' .
+                    '<span class="hidden dark:block" style="font-size: 0.75rem; font-weight: 700; line-height: 1.4; color: #f9fafb; overflow-wrap: break-word;">Web-Based Supply Management and Procurement System</span>' .
+                '</div>'
+            ))
             ->brandLogoHeight('auto')
+            ->favicon(fn (): string => asset('favicon.ico'))
             ->login(Login::class)
             ->registration(Register::class)
             ->globalSearch(false)
+            ->databaseNotifications()
+            ->databaseNotificationsPolling('30s')
+            ->sidebarCollapsibleOnDesktop()
             ->colors([
-                'primary' => Color::Amber,
-            ])
+            'primary' => Color::Amber,
+        ])
             ->discoverResources(in: app_path('Filament/Resources'), for: 'App\\Filament\\Resources')
             ->discoverPages(in: app_path('Filament/Pages'), for: 'App\\Filament\\Pages')
             ->pages([

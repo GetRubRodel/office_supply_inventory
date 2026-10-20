@@ -35,14 +35,14 @@ class ViewInspectionAcceptanceReport extends ViewRecord
                     $iar = $this->record;
                     $iar->loadMissing('items');
 
-                    // Quick pre-validation: at least one accepted item exists
-                    $acceptedItems = $iar->items->where('quantity_accepted', '>', 0);
+                    // Quick pre-validation: at least one received item exists
+                    $receivedItems = $iar->items->where('quantity', '>', 0);
 
-                    if ($acceptedItems->isEmpty()) {
+                    if ($receivedItems->isEmpty()) {
                         Notification::make()
                             ->danger()
                             ->title('Validation Failed')
-                            ->body('At least one item must have a quantity accepted greater than 0.')
+                            ->body('At least one item must have a quantity received greater than 0.')
                             ->send();
                         return;
                     }
@@ -85,8 +85,12 @@ class ViewInspectionAcceptanceReport extends ViewRecord
         $actions[] = Actions\Action::make('print')
             ->label('Print IAR')
             ->icon('heroicon-o-printer')
+            ->visible(fn (): bool => ! CurrentUser::get()?->isRegionalDirector() && ! CurrentUser::get()?->isStaff() && ! CurrentUser::get()?->isDivisionChief())
             ->url(fn () => route('iar.print', $this->record))
             ->openUrlInNewTab();
+
+        $actions[] = Actions\DeleteAction::make()
+            ->visible(fn (): bool => CurrentUser::get()?->isAdmin());
 
         return $actions;
     }

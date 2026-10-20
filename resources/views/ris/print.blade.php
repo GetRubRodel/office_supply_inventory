@@ -26,6 +26,7 @@
         .header .appendix {
             font-size: 10pt;
             font-weight: bold;
+            text-align: right;
         }
         .header .title {
             font-size: 14pt;
@@ -270,7 +271,7 @@
                 <div class="label-sm">Signature</div>
                 <div class="sign-value">{{ $requisition->requested_by_name ?? '_________________' }}</div>
                 <div class="label-sm">Printed Name</div>
-                <div class="sign-value">{{ $requisition->requested_by_designation ?? '_________________' }}</div>
+                <div class="sign-value">{{ $requisition->requesterPosition() ?? '_________________' }}</div>
                 <div class="label-sm">Designation</div>
                 <div class="sign-value">{{ $requisition->requested_by_date ? $requisition->requested_by_date->format('m/d/Y') : '_________________' }}</div>
                 <div class="label-sm">Date</div>

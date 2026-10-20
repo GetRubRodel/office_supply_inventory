@@ -6,6 +6,7 @@ use App\Support\CurrentUser;
 
 use App\Models\User;
 use Filament\Forms\Components\Section;
+use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Form;
 use Filament\Notifications\Notification;
@@ -51,11 +52,6 @@ class UserProfile extends Page
                             ->label('Full Name')
                             ->required()
                             ->maxLength(255),
-                        TextInput::make('username')
-                            ->label('Username')
-                            ->nullable()
-                            ->maxLength(255)
-                            ->unique(table: User::class, ignorable: fn () => CurrentUser::get()),
                         TextInput::make('email')
                             ->label('Email Address')
                             ->email()
@@ -75,6 +71,12 @@ class UserProfile extends Page
                                 'oninput' => "this.value = this.value.replace(/[^\d+]/g, '').replace(/(?!^)\+/g, '').slice(0, 13)",
                             ])
                             ->placeholder('e.g., 09171234567'),
+                        Select::make('position')
+                            ->label('Position')
+                            ->options(User::positionOptions())
+                            ->placeholder('Select your Position')
+                            ->searchable()
+                            ->required(),
                     ])->columns(2),
                 Section::make('Change Password')
                     ->description('Leave blank to keep your current password.')
@@ -111,9 +113,9 @@ class UserProfile extends Page
         $user = CurrentUser::get();
 
         $user->name = $data['name'];
-        $user->username = $data['username'] ?? null;
         $user->email = $data['email'];
         $user->phone = $data['phone'] ?? null;
+        $user->position = $data['position'] ?? null;
 
         if (filled($data['current_password'] ?? null)) {
             $user->password = Hash::make($data['new_password']);

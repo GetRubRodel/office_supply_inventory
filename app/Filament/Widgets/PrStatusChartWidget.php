@@ -7,7 +7,8 @@ use App\Support\CurrentUser;
 use App\Models\PurchaseRequest;
 use Filament\Widgets\ChartWidget as BaseWidget;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 
 class PrStatusChartWidget extends BaseWidget
 {
@@ -43,7 +44,7 @@ class PrStatusChartWidget extends BaseWidget
 
     protected function getData(): array
     {
-        $user = Auth::user();
+        $user = CurrentUser::get();
         if (! $user) {
             return $this->emptyData();
         }
@@ -56,12 +57,29 @@ class PrStatusChartWidget extends BaseWidget
             PurchaseRequest::STATUS_CANCELLED  => 'Cancelled',
         ];
 
+        // One GROUP BY query instead of five COUNT(*) queries, cached per
+        // scope (own-records vs. all) and per time filter for 60s.
+        $scope = $user->isOwnRecordsOnly() ? 'user:' . $user->id : 'all';
+        $filter = $this->filter ?: 'all';
+
+        $rawCounts = Cache::remember(
+            "dashboard.pr_status.{$scope}.{$filter}",
+            60,
+            function () use ($user) {
+                $query = $this->getScopedQuery($user);
+                $this->applyTimeFilter($query);
+
+                return $query
+                    ->select('status', DB::raw('count(*) as aggregate'))
+                    ->groupBy('status')
+                    ->pluck('aggregate', 'status')
+                    ->all();
+            }
+        );
+
         $counts = [];
         foreach ($statuses as $status => $label) {
-            $query = $this->getScopedQuery($user);
-            $query->where('status', $status);
-            $this->applyTimeFilter($query);
-            $counts[$label] = $query->count();
+            $counts[$label] = (int) ($rawCounts[$status] ?? 0);
         }
 
         return [

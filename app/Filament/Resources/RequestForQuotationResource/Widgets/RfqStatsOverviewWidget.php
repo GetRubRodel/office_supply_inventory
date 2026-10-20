@@ -23,11 +23,15 @@ class RfqStatsOverviewWidget extends BaseWidget
     {
         $totalRfqs = RequestForQuotation::count();
 
-        $pendingRfqs = RequestForQuotation::where('status', 'draft')
-            ->whereNull('approved_by_name')
+        // Approval details are sourced from the originating PR, so the RFQ's
+        // own approved_by_* columns are no longer populated. Pending/completed
+        // are derived from the RFQ lifecycle instead: draft RFQs still awaiting
+        // supplier quotations vs. RFQs already converted into an ABC.
+        $pendingRfqs = RequestForQuotation::where('status', RequestForQuotation::STATUS_DRAFT)
+            ->whereDoesntHave('abstractsOfCanvass')
             ->count();
 
-        $completedRfqs = RequestForQuotation::whereNotNull('approved_by_name')
+        $completedRfqs = RequestForQuotation::whereHas('abstractsOfCanvass')
             ->count();
 
         return [

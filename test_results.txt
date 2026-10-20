@@ -1,0 +1,83 @@
+﻿
+   PASS  Tests\Unit\ExampleTest
+  Γ£ô that true is true                                                                                            0.01s  
+
+   PASS  Tests\Feature\AbcDateRestrictionTest
+  Γ£ô create rejects yesterday for advertisement                                                                   2.32s  
+  Γ£ô create rejects yesterday for opening                                                                         0.16s  
+  Γ£ô create rejects previous month dates                                                                          0.16s  
+  Γ£ô create accepts today                                                                                         0.16s  
+  Γ£ô create accepts future dates                                                                                  0.16s  
+  Γ£ô update rejects changing a date to yesterday                                                                  0.16s  
+  Γ£ô update of non date fields is allowed                                                                         0.15s  
+
+   PASS  Tests\Feature\AbcItemNumberingTest
+  Γ£ô renumber items assigns sequential numbers                                                                    1.33s  
+  Γ£ô renumber items preserves row keys                                                                            1.38s  
+  Γ£ô renumber items handles empty input                                                                           1.29s  
+  Γ£ô abc items are numbered independently per record                                                              1.33s  
+  Γ£ô abc form save renumbers items sequentially                                                                   7.32s  
+  Γ£ô abc form renumbers remaining rows after removal                                                              2.83s  
+  Γ£ô edit page renumbers legacy items on load and save                                                            2.13s  
+
+   PASS  Tests\Feature\BacAbcConversionTest
+  Γ£ô bac creation from abc hydrates snapshot                                                                      1.29s  
+  Γ£ô converted abc is no longer eligible                                                                          1.25s  
+  Γ£ô second bac from same abc is rejected                                                                         1.24s  
+  Γ£ô bac without abc source is rejected                                                                           1.23s  
+  Γ£ô create page redirects when no eligible abc                                                                   1.40s  
+  Γ£ô create page loads when eligible abc exists                                                                   1.88s  
+  Γ£ô create page redirects after abc converted                                                                    1.41s  
+  Γ£ô bac list visible for permitted user                                                                          1.73s  
+  Γ£ô bac list hides create button and shows warning when no eligible abc                                          1.66s  
+  Γ£ô bac list shows create button when eligible abc exists                                                        1.73s  
+
+   PASS  Tests\Feature\BacApprovedBySourceTest
+  Γ£ô bac approved by fields are sourced from abc                                                                  1.33s  
+  Γ£ô bac approved by fields reflect abc changes                                                                   1.37s  
+  Γ£ô bac approved by data submitted directly is ignored                                                           1.31s  
+  Γ£ô bac approved by columns are shadowed by abc data                                                             1.32s  
+
+   PASS  Tests\Feature\BacMemberSourceTest
+  Γ£ô bac member fields are sourced from abc                                                                       1.32s  
+  Γ£ô bac member fields reflect abc changes                                                                        1.30s  
+  Γ£ô bac member data submitted directly is ignored                                                                1.29s  
+  Γ£ô bac member columns are shadowed by abc data                                                                  1.32s  
+  Γ£ô abc form persists committee designations                                                                     5.89s  
+  Γ£ô abc model fills missing designations on create                                                               1.31s  
+  Γ£ô abc model never overwrites existing designations                                                             1.32s  
+
+   FAIL  Tests\Feature\BacResolutionBlanksTest
+  Γ£ô blank one offers exactly the four divisions                                                                  2.18s  
+  Γ£ô blank two and four retrieve the first blank                                                                  2.48s  
+  Γ£ô blank five retrieves the third blank                                                                         2.43s  
+  Γ¿» blank three is an editable text input                                                                        2.13s  
+  Γ£ô retrieved blanks are read only and never persisted                                                           2.13s  
+  Γ£ô only blank one and three are persisted                                                                       1.25s  
+  Γ£ô division is substituted into every division blank                                                            1.25s  
+  Γ£ô rendered blocks follow the sample structure                                                                  1.68s  
+  Γ£ô further resolved is removed from the document                                                                1.29s  
+  Γ£ô further resolved is never written again                                                                      1.42s  
+  Γ£ô stored body is the tokenised template not the entered values                                                 1.26s  
+  Γ£ô resolution title is sentence case                                                                            1.24s  
+  Γ£ô print title is not bold                                                                                      1.38s  
+  Γ£ô print so resolved is not bold                                                                                1.36s  
+  Γ£ô print title is followed by one blank line before the whereas clauses                                         1.38s  
+  Γ£ô form and print show identical values                                                                         1.98s  
+  Γ£ô form preview updates live with the selected division and budget                                              2.78s  
+  Γ£ô date field is a required datetimepicker                                                                      2.11s  
+  Γ£ô closing statement carries the selected date                                                                  1.23s  
+  Γ£ô selected date is persisted with its time                                                                     1.29s  
+  Γ£ô print and view both show the resolved date                                                                   1.77s  
+  Γ£ô closing falls back to a blank when no date is chosen                                                         1.21s  
+  Γ£ô form preview updates live with the picked date                                                               3.14s  
+  Γ£ô changing the date updates the closing                                                                        1.28s  
+  Γ£ô an unlisted division is rejected                                                                             1.26s  
+  Γ£ô an unlisted division is rejected on update                                                                   1.25s  
+  Γ£ô changing the division repopulates the derived blanks                                                         1.25s  
+  Γ£ô changing the budget repopulates the derived blank                                                            1.24s  
+  Γ£ô unfilled blanks render as blank lines not tokens                                                             1.23s  
+  Γ£ô abc source dependency is still enforced                                                                      1.22s  
+  Γ£ô an abc cannot be converted twice                                                                             1.28s  
+  Γ£ô document numbering is preserved                                                                              1.26s  
+  Γ£ô view page is reachable and shows the retrieved values                                                        1.77s  

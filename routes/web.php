@@ -13,7 +13,7 @@ use Illuminate\Support\Facades\Route;
 
 Route::get('/', function () {
     if (auth()->check()) {
-        return redirect()->route('filament.resources.dashboard.index');
+        return redirect()->route('filament.admin.pages.dashboard');
     }
 
     return redirect()->route('filament.admin.auth.login');
@@ -21,84 +21,137 @@ Route::get('/', function () {
 
 Route::get('/ris/print/{requisition}', function (Requisition $requisition) {
     $user = auth()->user();
-    abort_unless(
-        $user && (
-            $requisition->user_id === $user->id
-            || (! $user->isOwnRecordsOnly() && $user->hasPermissionTo('requisitions.view'))
-        ),
-        403,
-    );
+    abort_unless($user && $user->hasPermissionTo('requisitions.view'), 403);
 
-    $requisition->load('items.supply');
+    // Staff may only print the RIS requests they submitted themselves.
+    // Division Chief and Regional Director may not print RIS documents.
+    if ($user->isStaff() && $requisition->user_id !== $user->id) {
+        abort(403);
+    }
+
+    if (in_array($user->role, ['division_chief', 'regional_director'], true)) {
+        abort(403);
+    }
+
+    // `user` is loaded so the Requesting Party designation resolves from the
+    // requester's profile position without an extra query per render.
+    $requisition->load(['items.supply', 'user']);
     return view('ris.print', compact('requisition'));
 })->name('ris.print')->middleware('auth');
 
 Route::get('/pr/print/{purchaseRequest}', function (PurchaseRequest $purchaseRequest) {
     $user = auth()->user();
-    abort_unless(
-        $user && (
-            $purchaseRequest->user_id === $user->id
-            || (! $user->isOwnRecordsOnly() && $user->hasPermissionTo('purchase_requests.view'))
-        ),
-        403,
-    );
+    // Any role with purchase_requests.view may print PRs (Staff included —
+    // they track the full pipeline read-only).
+    abort_unless($user && $user->hasPermissionTo('purchase_requests.view'), 403);
+
+    // Regional Director, Staff, and Division Chief may not print PRs.
+    if ($user->isRegionalDirector() || $user->isStaff() || $user->isDivisionChief()) {
+        abort(403);
+    }
 
     return view('pr.print', compact('purchaseRequest'));
 })->name('pr.print')->middleware('auth');
 
 Route::get('/rfq/print/{requestForQuotation}', function (RequestForQuotation $requestForQuotation) {
+    $user = auth()->user();
     abort_unless(
-        auth()->check() && auth()->user()->hasPermissionTo('request_for_quotations.view'),
+        $user && $user->hasPermissionTo('request_for_quotations.view'),
         403,
     );
+
+    // Regional Director, Staff, and Division Chief may not print RFQs.
+    if ($user->isRegionalDirector() || $user->isStaff() || $user->isDivisionChief()) {
+        abort(403);
+    }
 
     $rfq = $requestForQuotation;
     return view('rfq.print', compact('rfq'));
 })->name('rfq.print')->middleware('auth');
 
 Route::get('/abc/print/{abstractOfCanvass}', function (AbstractOfCanvass $abstractOfCanvass) {
+    $user = auth()->user();
     abort_unless(
-        auth()->check() && auth()->user()->hasPermissionTo('abstracts_of_canvass.view'),
+        $user && $user->hasPermissionTo('abstracts_of_canvass.view'),
         403,
     );
 
-    $abc = $abstractOfCanvass->load(['items', 'winningSupplier']);
+    // Regional Director, Staff, and Division Chief may not print ABCs.
+    if ($user->isRegionalDirector() || $user->isStaff() || $user->isDivisionChief()) {
+        abort(403);
+    }
+
+    $abc = $abstractOfCanvass->load(['items', 'winningSupplier', 'rfq.purchaseRequest']);
     return view('abc.print', compact('abc'));
 })->name('abc.print')->middleware('auth');
 
 Route::get('/po/print/{purchaseOrder}', function (PurchaseOrder $purchaseOrder) {
+    $user = auth()->user();
     abort_unless(
-        auth()->check() && auth()->user()->hasPermissionTo('purchase_orders.view'),
+        $user && $user->hasPermissionTo('purchase_orders.view'),
         403,
     );
 
-    $po = $purchaseOrder;
+    // Regional Director, Staff, and Division Chief may not print POs.
+    if ($user->isRegionalDirector() || $user->isStaff() || $user->isDivisionChief()) {
+        abort(403);
+    }
+
+    $po = $purchaseOrder->load('bacResolution');
     return view('po.print', compact('po'));
 })->name('po.print')->middleware('auth');
 
-Route::get('/iar/print/{inspectionAcceptanceReport}', function (InspectionAcceptanceReport $inspectionAcceptanceReport) {
+Route::get('/procurement-monitoring/print', function () {
     abort_unless(
-        auth()->check() && auth()->user()->hasPermissionTo('inspection_acceptance_reports.view'),
+        auth()->check() && auth()->user()->hasPermissionTo('procurement_monitoring_reports.print'),
         403,
     );
 
+    $filters = request()->only(['date_from', 'date_to', 'office_division']);
+    $rows = app(\App\Services\ProcurementMonitoringService::class)->rows($filters);
+
+    return view('procurement_monitoring.print', compact('rows', 'filters'));
+})->name('procurement_monitoring.print')->middleware('auth');
+
+Route::get('/iar/print/{inspectionAcceptanceReport}', function (InspectionAcceptanceReport $inspectionAcceptanceReport) {
+    $user = auth()->user();
+    abort_unless(
+        $user && $user->hasPermissionTo('inspection_acceptance_reports.view'),
+        403,
+    );
+
+    // Regional Director, Staff, and Division Chief may not print IARs.
+    if ($user->isRegionalDirector() || $user->isStaff() || $user->isDivisionChief()) {
+        abort(403);
+    }
+
     $iar = $inspectionAcceptanceReport;
+    // Supplier / P.O. No. are sourced from the source Purchase Order, so
+    // eager-load the chain the model accessors traverse.
+    $iar->loadMissing(['po.bacResolution', 'items.supply']);
+
     return view('iar.print', compact('iar'));
 })->name('iar.print')->middleware('auth');
 
 Route::get('/bac/print/{bacResolution}', function (BacResolution $bacResolution) {
+    $user = auth()->user();
     abort_unless(
-        auth()->check() && auth()->user()->hasPermissionTo('bac_resolutions.view'),
+        $user && $user->hasPermissionTo('bac_resolutions.view'),
         403,
     );
 
-    $bac = $bacResolution;
+    // Regional Director, Staff, and Division Chief may not print BAC Resolutions.
+    if ($user->isRegionalDirector() || $user->isStaff() || $user->isDivisionChief()) {
+        abort(403);
+    }
+
+    $bac = $bacResolution->load('abc');
     return view('bac.print', compact('bac'));
 })->name('bac.print')->middleware('auth');
 
 Route::get('/rpci/print/{rpci}', function (Rpci $rpci) {
     abort_unless(
-        auth()->check() && auth()->user()->hasPermissionTo('rpcis.view'),
+        auth()->check() && auth()->user()->hasPermissionTo('rpcis.print'),
         403,
     );
 
@@ -108,7 +161,7 @@ Route::get('/rpci/print/{rpci}', function (Rpci $rpci) {
 
 Route::get('/rpci/preview/{rpci}', function (Rpci $rpci) {
     abort_unless(
-        auth()->check() && auth()->user()->hasPermissionTo('rpcis.view'),
+        auth()->check() && auth()->user()->hasPermissionTo('rpcis.preview'),
         403,
     );
 
@@ -118,7 +171,7 @@ Route::get('/rpci/preview/{rpci}', function (Rpci $rpci) {
 
 Route::get('/rpci/pdf/{rpci}', function (Rpci $rpci) {
     abort_unless(
-        auth()->check() && auth()->user()->hasPermissionTo('rpcis.view'),
+        auth()->check() && auth()->user()->hasPermissionTo('rpcis.print'),
         403,
     );
 
@@ -129,51 +182,20 @@ Route::get('/rpci/pdf/{rpci}', function (Rpci $rpci) {
 
 Route::get('/ris/rsmi', function () {
     abort_unless(
-        auth()->check() && auth()->user()->hasPermissionTo('rsmi_reports.view'),
+        auth()->check() && auth()->user()->hasPermissionTo('rsmi_reports.print'),
         403,
     );
-    $dateFrom = request('date_from');
-    $dateTo = request('date_to');
-    $categoryId = request('category_id');
-    $supplyId = request('supply_id');
 
-    $query = App\Models\RequisitionItem::with(['requisition', 'supply'])
-        ->whereHas('requisition', function ($q) {
-            $q->whereIn('status', ['issued', 'received']);
-        });
+    // Both the Print and the Download action read their rows from
+    // RsmiReportService, so the two outputs can never drift apart.
+    $report = app(App\Services\RsmiReportService::class)->build([
+        'date_from' => request('date_from'),
+        'date_to' => request('date_to'),
+        'category_id' => request('category_id'),
+        'supply_id' => request('supply_id'),
+    ], auth()->user()->name ?? null);
 
-    if ($dateFrom) {
-        $query->whereHas('requisition', fn ($q) => $q->whereDate('issued_by_date', '>=', $dateFrom));
-    }
-    if ($dateTo) {
-        $query->whereHas('requisition', fn ($q) => $q->whereDate('issued_by_date', '<=', $dateTo));
-    }
-    if ($categoryId) {
-        $query->whereHas('supply', fn ($q) => $q->where('category_id', $categoryId));
-    }
-    if ($supplyId) {
-        $query->where('supply_id', $supplyId);
-    }
-
-    $items = $query->orderBy('id')->get();
-
-    $recapitulation = $items
-        ->groupBy(fn ($item) => $item->supply?->stock_no ?? $item->stock_no)
-        ->map(function ($group, $stockNo) {
-            $first = $group->first();
-            $supply = $first->supply;
-            return [
-                'stock_number' => $stockNo,
-                'quantity' => $group->sum('quantity_issued'),
-                'unit_cost' => (float) ($first->price ?? $supply?->unit_price ?? 0),
-            ];
-        })
-        ->values()
-        ->toArray();
-
-    $issuedBy = auth()->user()->name ?? null;
-
-    return view('ris.rsmi', compact('items', 'recapitulation', 'dateFrom', 'dateTo', 'issuedBy'));
+    return view('ris.rsmi', compact('report'));
 })->name('ris.rsmi')->middleware('auth');
 
 /*

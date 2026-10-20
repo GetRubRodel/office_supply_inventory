@@ -27,11 +27,21 @@ class RequestForQuotationPolicy
 
     public function update(User $user, RequestForQuotation $requestForQuotation): bool
     {
+        // Division Chief may not update RFQ records.
+        if ($user->isDivisionChief()) {
+            return false;
+        }
+
         return $user->hasPermissionTo('request_for_quotations.update');
     }
 
     public function delete(User $user, RequestForQuotation $requestForQuotation): bool
     {
+        // Supply Officer may not delete RFQ records.
+        if ($user->isSupplyOfficer()) {
+            return false;
+        }
+
         return $user->hasPermissionTo('request_for_quotations.delete');
     }
 }

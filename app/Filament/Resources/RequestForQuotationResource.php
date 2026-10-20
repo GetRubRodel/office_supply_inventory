@@ -7,6 +7,7 @@ use App\Support\CurrentUser;
 use App\Filament\Resources\RequestForQuotationResource\Pages;
 use App\Models\PurchaseRequest;
 use App\Models\RequestForQuotation;
+use App\Services\ProcurementBadgeService;
 use App\Support\TinFormatter;
 use Closure;
 use Filament\Forms;
@@ -14,6 +15,7 @@ use Filament\Forms\Form;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
 
 class RequestForQuotationResource extends Resource
 {
@@ -37,20 +39,18 @@ class RequestForQuotationResource extends Resource
      */
     public static function hasEligibleSource(): bool
     {
-        $convertedPrIds = RequestForQuotation::query()
-            ->whereNotNull('purchase_request_id')
-            ->pluck('purchase_request_id');
-
-        return PurchaseRequest::query()
-            ->where('status', PurchaseRequest::STATUS_APPROVED)
-            ->whereNotIn('id', $convertedPrIds)
-            ->exists();
+        return ProcurementBadgeService::eligibleQuery(ProcurementBadgeService::STAGE_RFQ)->exists();
     }
 
     public static function canEdit(mixed $record = null): bool
     {
         $user = CurrentUser::get();
         if (! $user) return false;
+
+        // Division Chief may not edit RFQ records.
+        if ($user->isDivisionChief()) {
+            return false;
+        }
 
         return $user->hasPermissionTo('request_for_quotations.update');
     }
@@ -60,6 +60,11 @@ class RequestForQuotationResource extends Resource
         $user = CurrentUser::get();
         if (! $user) return false;
 
+        // Supply Officer may not delete RFQ records.
+        if ($user->isSupplyOfficer()) {
+            return false;
+        }
+
         return $user->hasPermissionTo('request_for_quotations.delete');
     }
 
@@ -67,26 +72,13 @@ class RequestForQuotationResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-clipboard-document-list';
 
-    protected static ?string $navigationGroup = 'Purchase Management';
+    protected static ?string $navigationGroup = 'Procurement Management';
 
     protected static ?int $navigationSort = 7;
 
     public static function getNavigationBadge(): ?string
     {
-        $user = CurrentUser::get();
-        if (! $user || ! $user->canManageProcurement()) {
-            return null;
-        }
-
-        $count = PurchaseRequest::where('status', PurchaseRequest::STATUS_APPROVED)
-            ->whereNotIn('id', function ($query) {
-                $query->select('purchase_request_id')
-                    ->from('request_for_quotations')
-                    ->whereNotNull('purchase_request_id');
-            })
-            ->count();
-
-        return $count > 0 ? (string) $count : null;
+        return ProcurementBadgeService::badgeFor(ProcurementBadgeService::STAGE_RFQ, CurrentUser::get());
     }
 
     public static function getNavigationBadgeColor(): ?string
@@ -110,7 +102,7 @@ class RequestForQuotationResource extends Resource
                                     ->columnSpan(2),
                                 Forms\Components\DatePicker::make('date')
                                     ->label('Date')
-                                    ->default(now())
+                                    ->minDate(now()->startOfDay())
                                     ->required()
                                     ->columnSpan(1),
                             ]),
@@ -119,11 +111,9 @@ class RequestForQuotationResource extends Resource
                             ->placeholder('Select a PR to load items from...')
                             ->required(fn (string $operation): bool => $operation === 'create')
                             ->options(function () {
-                                $usedPrIds = RequestForQuotation::pluck('purchase_request_id')->filter()->unique();
-
-                                return PurchaseRequest::with('items')
-                                    ->where('status', PurchaseRequest::STATUS_APPROVED)
-                                    ->whereNotIn('id', $usedPrIds)
+                                return PurchaseRequest::query()
+                                    ->eligibleForRfq()
+                                    ->with('items')
                                     ->get()
                                     ->mapWithKeys(function ($pr) {
                                         $itemCount = $pr->items->count();
@@ -144,10 +134,20 @@ class RequestForQuotationResource extends Resource
                                         'unit_cost' => $item->unit_cost,
                                     ])->toArray();
                                     $livewire->data['items'] = $items;
+                                } else {
+                                    // A source PR without items must not leave stale
+                                    // rows behind when the selection changes.
+                                    $livewire->data['items'] = [];
+                                }
+                                if ($pr) {
+                                    // Approval details always come from the source PR.
+                                    $set('approved_by_name', $pr->approved_by_name);
+                                    $set('approved_by_designation', $pr->approved_by_designation);
                                 }
                             })
                             ->columnSpan(2),
                         Forms\Components\Grid::make(2)
+                            ->hidden()
                             ->schema([
                                 Forms\Components\TextInput::make('company_name')
                                     ->label('Supplier Name'),
@@ -205,18 +205,26 @@ class RequestForQuotationResource extends Resource
                                     ->schema([
                                         Forms\Components\TextInput::make('stock_property_no')
                                             ->label('Stock No.')
-                                            ->columnSpan(1),
+                                            ->columnSpan(1)
+                                            ->disabled()
+                                            ->dehydrated(),
                                         Forms\Components\TextInput::make('unit')
                                             ->label('Unit')
-                                            ->columnSpan(1),
+                                            ->columnSpan(1)
+                                            ->disabled()
+                                            ->dehydrated(),
                                         Forms\Components\TextInput::make('quantity')
                                             ->label('Quantity')
                                             ->numeric()
-                                            ->columnSpan(1),
+                                            ->columnSpan(1)
+                                            ->disabled()
+                                            ->dehydrated(),
                                         Forms\Components\Textarea::make('item_description')
                                             ->label('Description of Article/s')
                                             ->rows(2)
-                                            ->columnSpan(2),
+                                            ->columnSpan(2)
+                                            ->disabled()
+                                            ->dehydrated(),
                                         Forms\Components\TextInput::make('unit_cost')
                                             ->label('Unit Cost')
                                             ->numeric()
@@ -226,9 +234,11 @@ class RequestForQuotationResource extends Resource
                                             ->hidden(),
                                     ]),
                             ])
-                            ->defaultItems(5)
-                            ->maxItems(25)
-                            ->addActionLabel('Add Item'),
+                            ->defaultItems(0)
+                            ->maxItems(30)
+                            ->addable(false)
+                            ->deletable(false)
+                            ->reorderable(false),
                     ]),
 
                 Forms\Components\Section::make('Signatories')
@@ -237,11 +247,76 @@ class RequestForQuotationResource extends Resource
                             ->schema([
                                 Forms\Components\Fieldset::make('Canvassed by')
                                     ->schema([
-                                        Forms\Components\TextInput::make('canvassed_by_name')
+                                        Forms\Components\Select::make('canvassed_by_name')
                                             ->label('Name of Canvasser')
+                                            ->options([
+                                                 'Rodel C. Linugao' => 'Rodel C. Linugao',
+                                                 'Wesley C. Calamba' => 'Wesley C. Calamba',
+                                                 'Mohammad Ali C. Usman' => 'Mohammad Ali C. Usman',
+                                                 'Cherrie Lyn C. Olaco' => 'Cherrie Lyn C. Olaco',
+                                                 'Tessa May S. Balane' => 'Tessa May S. Balane',
+                                                 'Ana Fe B. Galanto' => 'Ana Fe B. Galanto',
+                                                 'Rosie D. Noleal' => 'Rosie D. Noleal',
+                                                 'Romula M. Lakim' => 'Romula M. Lakim',
+                                                 'Carlo Mario A. Hofeliña' => 'Carlo Mario A. Hofeliña',
+                                                 'Anna May B. Pahilagao' => 'Anna May B. Pahilagao',
+                                                 'Rhodelia J. Mandolado' => 'Rhodelia J. Mandolado',
+                                                 'Jonroe C. Sagra' => 'Jonroe C. Sagra',
+                                                 'Glenda T. Chiva' => 'Glenda T. Chiva',
+                                                 'Shaira Vanessa N. Brahim' => 'Shaira Vanessa N. Brahim',
+                                                 'Sittie Rakima M. Kapampangan' => 'Sittie Rakima M. Kapampangan',
+                                                 'Ralph Jude B. Delposo' => 'Ralph Jude B. Delposo',
+                                                 'Baisarah M. Abdullah' => 'Baisarah M. Abdullah',
+                                                 'Haizia B. Lauban' => 'Haizia B. Lauban',
+                                                 'Rizalyn C. Isnani-Concha' => 'Rizalyn C. Isnani-Concha',
+                                                 'Miguel A. Peñaloza' => 'Miguel A. Peñaloza',
+                                                 'Arnold B. Aumento' => 'Arnold B. Aumento',
+                                                 'Loreto B. Condesa' => 'Loreto B. Condesa',
+                                                 'Atty. Stephanie D. Publico-Lopez' => 'Atty. Stephanie D. Publico-Lopez',
+                                                 'Atty. Reuben P. Escarlan' => 'Atty. Reuben P. Escarlan',
+                                                 'Atty. Mae P. Galong' => 'Atty. Mae P. Galong',
+                                                 'Atty. Benedict Mananguit' => 'Atty. Benedict Mananguit',
+                                                 'Atty. Keysie M. Gomez' => 'Atty. Keysie M. Gomez',
+                                                 ])
+                                            ->searchable()
                                             ->required(),
-                                        Forms\Components\TextInput::make('canvassed_by_designation')
+                                        Forms\Components\Select::make('canvassed_by_designation')
                                             ->label('Designation')
+                                            ->options([
+                                                 'Administrative Aide-I' => 'Administrative Aide-I',
+                                                 'Administrative Aide-II' => 'Administrative Aide-II',
+                                                 'Administrative Aide-III' => 'Administrative Aide-III',
+'Administrative Aide-IV' => 'Administrative Aide-IV',
+'Administrative Aide-V' => 'Administrative Aide-V',
+ 'Administrative Aide-VI' => 'Administrative Aide-VI',
+ 'Administrative Officer I' => 'Administrative Officer I',
+ 'Administrative Officer II' => 'Administrative Officer II',
+ 'Administrative Officer III' => 'Administrative Officer III',
+ 'Administrative Officer IV' => 'Administrative Officer IV',
+ 'Administrative Assistant I' => 'Administrative Assistant I',
+ 'Administrative Assistant II' => 'Administrative Assistant II',
+'Administrative Assistant III' => 'Administrative Assistant III',
+'Security Officer I' => 'Security Officer I',
+ 'Security Officer II' => 'Security Officer II',
+'Process Server' => 'Process Server',
+'Special Investigator I' => 'Special Investigator I',
+ 'Special Investigator II' => 'Special Investigator II',
+ 'Special Investigator III' => 'Special Investigator III',
+'Special Investigator IV' => 'Special Investigator IV',
+'Information Officer I' => 'Information Officer I',
+'Information Officer II' => 'Information Officer II',
+'Training Specialist I' => 'Training Specialist I',
+ 'Training Specialist II' => 'Training Specialist II',
+'Attorney I' => 'Attorney I', 'Attorney II' => 'Attorney II',
+'Attorney III' => 'Attorney III',
+ 'Attorney IV' => 'Attorney IV',
+'Attorney V' => 'Attorney V',
+'OIC Director' => 'OIC Director',
+'Regional Director' => 'Regional Director',
+
+
+                                            ])
+                                            ->searchable()
                                             ->required(),
                                     ]),
                                 Forms\Components\Fieldset::make('Quoted by')
@@ -256,25 +331,21 @@ class RequestForQuotationResource extends Resource
                                     ->schema([
                                         Forms\Components\TextInput::make('approved_by_name')
                                             ->label('Name')
-                                            ->default(function () {
-                                                $rd = \App\Models\User::where('role', 'regional_director')->first();
-                                                return $rd?->name ?? '';
-                                            }),
+                                            ->disabled()
+                                            ->dehydrated(false),
                                         Forms\Components\TextInput::make('approved_by_designation')
                                             ->label('Designation')
-                                            ->default(function () {
-                                                $rd = \App\Models\User::where('role', 'regional_director')->first();
-                                                return $rd ? \App\Models\User::getRoleLabel($rd->role) : '';
-                                            }),
+                                            ->disabled()
+                                            ->dehydrated(false),
                                     ]),
                             ]),
                     ]),
             ]);
     }
 
-    public static function getEloquentQuery(): \Illuminate\Database\Eloquent\Builder
+    public static function getEloquentQuery(): Builder
     {
-        return parent::getEloquentQuery()->with('editingUser');
+        return parent::getEloquentQuery()->with(['editingUser', 'purchaseRequest']);
     }
 
     public static function table(Table $table): Table
@@ -290,16 +361,18 @@ class RequestForQuotationResource extends Resource
                     ->badge()
                     ->color('warning')
                     ->icon('heroicon-o-lock-open')
-                    ->placeholder('—'),
+                    ->placeholder('—')
+                    ->toggleable(isToggledHiddenByDefault: true),
+                Tables\Columns\TextColumn::make('purchaseRequest.pr_no')
+                    ->label('PR Source')
+                    ->searchable(),
                 Tables\Columns\TextColumn::make('date')
                     ->date()
                     ->sortable(),
-                Tables\Columns\TextColumn::make('purchaseRequest.pr_no')
-                    ->label('Source PR')
-                    ->searchable(),
                 Tables\Columns\TextColumn::make('items_count')
                     ->label('Items')
-                    ->counts('items'),
+                    ->counts('items')
+                    ->toggleable(isToggledHiddenByDefault: true),
                 Tables\Columns\TextColumn::make('canvassed_by_name')
                     ->label('Canvasser')
                     ->searchable()
@@ -326,8 +399,7 @@ class RequestForQuotationResource extends Resource
                     ->toggleable(isToggledHiddenByDefault: true),
                 Tables\Columns\TextColumn::make('approved_by_name')
                     ->label('Approved By')
-                    ->searchable()
-                    ->toggleable(isToggledHiddenByDefault: true),
+                    ->searchable(),
                 Tables\Columns\TextColumn::make('created_at')
                     ->dateTime()
                     ->sortable()
@@ -342,10 +414,11 @@ class RequestForQuotationResource extends Resource
                 Tables\Actions\Action::make('print')
                     ->label('Print RFQ')
                     ->icon('heroicon-o-printer')
+                    ->visible(fn (): bool => ! CurrentUser::get()?->isRegionalDirector() && ! CurrentUser::get()?->isStaff() && ! CurrentUser::get()?->isDivisionChief())
                     ->url(fn (RequestForQuotation $record): string => route('rfq.print', $record))
                     ->openUrlInNewTab(),
                 Tables\Actions\EditAction::make()
-                    ->visible(fn (): bool => CurrentUser::get()?->hasPermissionTo('request_for_quotations.update')),
+                    ->visible(fn (): bool => CurrentUser::get()?->hasPermissionTo('request_for_quotations.update') && ! CurrentUser::get()?->isDivisionChief()),
                 Tables\Actions\DeleteAction::make()
                     ->visible(fn (): bool => CurrentUser::get()?->hasPermissionTo('request_for_quotations.delete')),
             ])

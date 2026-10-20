@@ -13,6 +13,7 @@ use Filament\Forms\Form;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
 
 class SupplierResource extends Resource
 {
@@ -23,15 +24,22 @@ class SupplierResource extends Resource
 
     public static function canCreate(): bool
     {
-        // Only roles granted the "suppliers.create" permission (Administrator,
-        // Supply Officer) may create suppliers — enforced by SupplierPolicy::create.
-        return static::can('create');
+        // Any role granted the "suppliers.create" permission (Administrator,
+        // Supply Officer) may create suppliers — enforced
+        // by SupplierPolicy::create. Supplier records are also maintained
+        // automatically from Purchase Order data (see SupplierSyncService).
+        return CurrentUser::get()?->hasPermissionTo('suppliers.create') ?? false;
     }
 
     public static function canEdit(mixed $record = null): bool
     {
         $user = CurrentUser::get();
         if (! $user) return false;
+
+        // Division Chief may not edit Supplier records.
+        if ($user->isDivisionChief()) {
+            return false;
+        }
 
         return $user->hasPermissionTo('suppliers.update');
     }
@@ -40,6 +48,11 @@ class SupplierResource extends Resource
     {
         $user = CurrentUser::get();
         if (! $user) return false;
+
+        // Supply Officer may not delete Supplier records.
+        if ($user->isSupplyOfficer()) {
+            return false;
+        }
 
         return $user->hasPermissionTo('suppliers.delete');
     }
@@ -52,6 +65,17 @@ class SupplierResource extends Resource
 
     protected static ?int $navigationSort = 2;
 
+    /**
+     * Eager-load related Purchase Orders so the PO reference columns
+     * (PO Number(s) / PO Date(s)) render without N+1 queries.
+     */
+    public static function getEloquentQuery(): Builder
+    {
+        return parent::getEloquentQuery()
+            ->with(['purchaseOrders'])
+            ->withCount('purchaseOrders');
+    }
+
     public static function form(Form $form): Form
     {
         return $form
@@ -62,15 +86,6 @@ class SupplierResource extends Resource
                             ->label('Supplier Name')
                             ->required()
                             ->maxLength(255),
-                        Forms\Components\TextInput::make('contact_person')
-                            ->label('Contact Person')
-                            ->maxLength(255)
-                            ->required(),
-                        Forms\Components\TextInput::make('email')
-                            ->label('Email')
-                            ->email()
-                            ->maxLength(255)
-                            ->required(),
                         Forms\Components\TextInput::make('phone')
                             ->label('Contact Number')
                             ->tel()
@@ -129,30 +144,26 @@ class SupplierResource extends Resource
                     ->label('Supplier Name')
                     ->searchable()
                     ->sortable(),
-                Tables\Columns\TextColumn::make('contact_person')
-                    ->label('Contact Person')
-                    ->searchable()
-                    ->toggleable(isToggledHiddenByDefault: true),
-                Tables\Columns\TextColumn::make('email')
-                    ->searchable()
-                    ->toggleable(isToggledHiddenByDefault: true),
                 Tables\Columns\TextColumn::make('phone')
                     ->label('Contact Number')
                     ->searchable(),
                 Tables\Columns\TextColumn::make('tin')
                     ->label('TIN Number')
                     ->formatStateUsing(fn (?string $state): ?string => TinFormatter::format($state))
-                    ->searchable()
-                    ->toggleable(isToggledHiddenByDefault: true),
+                    ->searchable(),
                 Tables\Columns\TextColumn::make('address')
                     ->searchable()
                     ->limit(30)
                     ->tooltip(fn (Supplier $record): string => $record->address ?? ''),
-                Tables\Columns\TextColumn::make('supplies_count')
-                    ->label('Supplies')
-                    ->counts('supplies')
-                    ->sortable()
-                    ->toggleable(isToggledHiddenByDefault: true),
+                Tables\Columns\TextColumn::make('po_numbers')
+                    ->label('PO Number(s)')
+                    ->badge()
+                    ->color('gray')
+                    ->placeholder('—')
+                    ->tooltip(fn (Supplier $record): string => $record->po_numbers ?? ''),
+                Tables\Columns\TextColumn::make('po_dates')
+                    ->label('PO Date(s)')
+                    ->placeholder('—'),
                 Tables\Columns\TextColumn::make('created_at')
                     ->label('Date Created')
                     ->dateTime()
@@ -165,11 +176,14 @@ class SupplierResource extends Resource
             ])
             ->actions([
                 Tables\Actions\EditAction::make(),
-                Tables\Actions\DeleteAction::make(),
+                Tables\Actions\ViewAction::make(),
+                Tables\Actions\DeleteAction::make()
+                    ->visible(fn (): bool => ! CurrentUser::get()?->isSupplyOfficer()),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
-                    Tables\Actions\DeleteBulkAction::make(),
+                    Tables\Actions\DeleteBulkAction::make()
+                        ->visible(fn (): bool => ! CurrentUser::get()?->isSupplyOfficer()),
                 ]),
             ]);
     }

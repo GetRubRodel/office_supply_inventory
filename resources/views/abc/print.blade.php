@@ -11,8 +11,8 @@
 
         body {
             font-family: Arial, sans-serif;
-            font-size: 8pt;
-            line-height: 1.3;
+            font-size: 11pt;
+            line-height: 1.4;
             color: #000;
             margin: 0;
             padding: 0;
@@ -160,9 +160,10 @@
             border-top: 1px solid #000;
             padding-top: 3px;
             display: inline-block;
-            min-width: 240px;
+            min-width: 100px;
             font-weight: bold;
             text-transform: uppercase;
+            font-size: 8pt;
         }
         .approval .signatory-title {
             font-size: 7pt;
@@ -185,7 +186,11 @@
                     $logoPath = public_path('images/logo.png');
                 @endphp
                 @if(file_exists($logoPath))
-                    <img src="{{ asset('images/logo.png') }}" alt="System Logo" style="height:60px;width:auto;">
+                    <picture>
+                        <source srcset="{{ asset('images/logo.avif') }}" type="image/avif">
+                        <source srcset="{{ asset('images/logo.webp') }}" type="image/webp">
+                        <img src="{{ asset('images/logo.png') }}" alt="System Logo" width="60" height="60" style="height:60px;width:auto;" decoding="async">
+                    </picture>
                 @else
                     <div style="width:60px;height:60px;border:2px solid #ccc;border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto;font-size:5pt;font-weight:bold;text-align:center;line-height:1.2;color:#999;">
                         LOGO
@@ -274,7 +279,7 @@
             @forelse($abc->items as $item)
                 <tr>
                     <td class="text-center">{{ $item->item_number ?? '-' }}</td>
-                    <td class="text-center">{{ $item->quantity }}</td>
+                    <td class="text-center">{{ $item->quantity ?? '-' }}</td>
                     <td class="text-center">{{ $item->unit ?? '-' }}</td>
                     <td>{{ $item->description ?? '-' }}</td>
                     <td class="text-right">{{ $item->supplier1_price ? number_format($item->supplier1_price, 2) : '' }}</td>
@@ -348,7 +353,7 @@
         <div class="approval-label">APPROVED BY:</div>
         <div class="signatory-block">
             <div class="signatory-line">{{ $abc->approved_by_name ?: '________________________' }}</div>
-            <div class="signatory-title">{{ $abc->approved_by_designation ?: 'Regional Director' }}</div>
+            <div class="signatory-title">{{ $abc->approved_by_designation ?: '________________________' }}</div>
         </div>
     </div>
 

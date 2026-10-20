@@ -13,6 +13,7 @@ use App\Models\RequestForQuotation;
 use Filament\Widgets\ChartWidget as BaseWidget;
 use Illuminate\Contracts\Support\Htmlable;
 use Filament\Support\RawJs;
+use Illuminate\Support\Facades\Cache;
 
 class ProcurementStatusChartWidget extends BaseWidget
 {
@@ -51,14 +52,18 @@ class ProcurementStatusChartWidget extends BaseWidget
 
     protected function getData(): array
     {
-        $counts = [
-            PurchaseRequest::count(),
-            RequestForQuotation::count(),
-            AbstractOfCanvass::count(),
-            BacResolution::count(),
-            PurchaseOrder::count(),
-            InspectionAcceptanceReport::count(),
-        ];
+        // Six COUNT(*) queries across six tables; cached for 60s so the
+        // 30s polling interval does not re-run them on every tick.
+        $counts = Cache::remember('dashboard.procurement_counts', 60, function () {
+            return [
+                PurchaseRequest::count(),
+                RequestForQuotation::count(),
+                AbstractOfCanvass::count(),
+                BacResolution::count(),
+                PurchaseOrder::count(),
+                InspectionAcceptanceReport::count(),
+            ];
+        });
 
         $labels = ['PR', 'RFQ', 'ABC', 'BAC Resolution', 'PO', 'IAR'];
 

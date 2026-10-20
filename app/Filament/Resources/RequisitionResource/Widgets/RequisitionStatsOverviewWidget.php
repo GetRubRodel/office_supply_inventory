@@ -76,18 +76,18 @@ class RequisitionStatsOverviewWidget extends BaseWidget
 
     /**
      * Build a base query scoped to the current user's role.
-     * Mirrors the scoping logic in RequisitionResource::table().
+     * Mirrors the scoping logic in RequisitionResource::getEloquentQuery().
      */
     protected static function getScopedQuery($user): Builder
     {
+        // Staff see statistics only for their own requests; all other roles
+        // with requisitions.view see the full record set.
         $query = Requisition::query();
 
-        // Staff: own records only
-        if ($user->isOwnRecordsOnly()) {
-            return $query->where('user_id', $user->id);
+        if ($user && $user->isStaff()) {
+            $query->where('user_id', $user->id);
         }
 
-        // Division Chief and all other roles see all RIS records.
         return $query;
     }
 }

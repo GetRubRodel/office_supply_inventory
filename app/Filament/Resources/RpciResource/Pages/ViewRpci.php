@@ -17,13 +17,15 @@ class ViewRpci extends ViewRecord
     {
         return [
             Actions\Action::make('print')
-                ->label('Print RPCI')
+                ->label('Print RPCI Report')
                 ->icon('heroicon-o-printer')
+                ->visible(fn (): bool => (bool) CurrentUser::get()?->hasPermissionTo('rpcis.print'))
                 ->url(fn () => route('rpci.print', $this->record))
                 ->openUrlInNewTab(),
             Actions\Action::make('preview')
                 ->label('Preview & Export PDF')
                 ->icon('heroicon-o-document-arrow-down')
+                ->visible(fn (): bool => (bool) CurrentUser::get()?->hasPermissionTo('rpcis.preview'))
                 ->url(fn () => route('rpci.preview', $this->record))
                 ->openUrlInNewTab(),
             Actions\Action::make('finalize')
@@ -40,7 +42,7 @@ class ViewRpci extends ViewRecord
                     Notification::make()
                         ->success()
                         ->title('Report Finalized')
-                        ->body("RPCI {$this->record->report_no} has been finalized.")
+                        ->body("RPCI Report {$this->record->report_no} has been finalized.")
                         ->send();
                     $this->redirect($this->getResource()::getUrl('view', ['record' => $this->record]));
                 }),

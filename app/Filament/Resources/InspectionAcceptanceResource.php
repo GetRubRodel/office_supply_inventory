@@ -9,6 +9,7 @@ use App\Models\Category;
 use App\Models\InspectionAcceptanceReport;
 use App\Models\PurchaseOrder;
 use App\Models\Supply;
+use App\Services\ProcurementBadgeService;
 use App\Services\StockInService;
 use Filament\Forms;
 use Filament\Forms\Form;
@@ -16,6 +17,7 @@ use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
 
 class InspectionAcceptanceResource extends Resource
 {
@@ -39,13 +41,7 @@ class InspectionAcceptanceResource extends Resource
      */
     public static function hasEligibleSource(): bool
     {
-        $convertedPoIds = InspectionAcceptanceReport::query()
-            ->whereNotNull('po_id')
-            ->pluck('po_id');
-
-        return PurchaseOrder::query()
-            ->whereNotIn('id', $convertedPoIds)
-            ->exists();
+        return ProcurementBadgeService::eligibleQuery(ProcurementBadgeService::STAGE_IAR)->exists();
     }
 
     public static function canEdit(mixed $record = null): bool
@@ -57,24 +53,13 @@ class InspectionAcceptanceResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-clipboard-document-check';
 
-    protected static ?string $navigationGroup = 'Purchase Management';
+    protected static ?string $navigationGroup = 'Procurement Management';
 
-    protected static ?int $navigationSort = 10;
+    protected static ?int $navigationSort = 11;
 
     public static function getNavigationBadge(): ?string
     {
-        $user = CurrentUser::get();
-        if (! $user || ! $user->canManageProcurement()) {
-            return null;
-        }
-
-        $count = PurchaseOrder::whereNotIn('id', function ($query) {
-            $query->select('po_id')
-                ->from('inspection_acceptance_reports')
-                ->whereNotNull('po_id');
-        })->count();
-
-        return $count > 0 ? (string) $count : null;
+        return ProcurementBadgeService::badgeFor(ProcurementBadgeService::STAGE_IAR, CurrentUser::get());
     }
 
     public static function getNavigationBadgeColor(): ?string
@@ -94,10 +79,9 @@ class InspectionAcceptanceResource extends Resource
                             ->placeholder('Select PO to load supplier & items...')
                             ->required(fn (string $operation): bool => $operation === 'create')
                             ->options(function () {
-                                $usedPoIds = InspectionAcceptanceReport::pluck('po_id')->filter()->unique();
-
-                                return PurchaseOrder::with('items')
-                                    ->whereNotIn('id', $usedPoIds)
+                                return PurchaseOrder::query()
+                                    ->eligibleForIar()
+                                    ->with('items')
                                     ->get()
                                     ->mapWithKeys(function ($po) {
                                         $itemCount = $po->items->count();
@@ -108,23 +92,36 @@ class InspectionAcceptanceResource extends Resource
                             ->live()
                             ->afterStateUpdated(function ($state, callable $set, $livewire) {
                                 /** @var \App\Models\PurchaseOrder|null $po */
-                                $po = PurchaseOrder::with('items')->find($state);
+                                $po = PurchaseOrder::with(
+                                    'bacResolution.abc.rfq.purchaseRequest',
+                                    'abc.rfq.purchaseRequest',
+                                )->find($state);
                                 if (!$po) return;
 
                                 $set('supplier_name', $po->supplier_name ?? '');
                                 $set('po_no', $po->po_no ?? '');
 
+                                // Auto-populate the Requisitioning Office /
+                                // Department from the source Purchase Request
+                                // (IAR → PO → BAC Resolution → ABC → RFQ → PR).
+                                // The field is read-only, so this is the only
+                                // place its value is ever set.
+                                $set('requisitioning_office_dept',
+                                    $po->bacResolution?->abc?->rfq?->purchaseRequest?->office_division
+                                    ?? $po->abc?->rfq?->purchaseRequest?->office_division
+                                    ?? '');
+
                                 if ($po->items->count() > 0) {
-                                    $items = $po->items->map(fn($poItem) => [
-                                        'stock_no' => $poItem->stock_no ?? '',
-                                        'unit' => $poItem->unit ?? '',
-                                        'description' => $poItem->description ?? '',
-                                        'quantity' => $poItem->quantity ?? 1,
-                                        'quantity_accepted' => $poItem->quantity ?? 1,
-                                        'quantity_rejected' => 0,
-                                        'unit_cost' => $poItem->unit_cost ?? 0,
-                                        'category_id' => $poItem->category_id ?? null,
-                                    ])->toArray();
+                                    $items = $po->items->map(function ($poItem) {
+                                        return [
+                                            'stock_no' => $poItem->stock_no ?? '',
+                                            'unit' => $poItem->unit ?? '',
+                                            'description' => $poItem->description ?? '',
+                                            'quantity' => $poItem->quantity ?? 1,
+                                            'unit_cost' => $poItem->unit_cost ?? 0,
+                                            'category_id' => $poItem->category_id ?? null,
+                                        ];
+                                    })->toArray();
                                     $livewire->data['items'] = $items;
                                 }
                             })
@@ -138,23 +135,36 @@ class InspectionAcceptanceResource extends Resource
                                     ->columnSpan(1),
                                 Forms\Components\DatePicker::make('date')
                                     ->label('Date')
-                                    ->default(now())
                                     ->required()
                                     ->columnSpan(1),
                             ]),
                         Forms\Components\Grid::make(4)
                             ->schema([
+                                // Supplier and P.O. No. are read-only mirrors of the
+                                // source Purchase Order. The model hydrates both on
+                                // create (hydrateFromPo) and re-sources them live on
+                                // read, so they are never dehydrated here — that
+                                // keeps the Purchase Order the single source of
+                                // truth and stops stale form state from persisting.
                                 Forms\Components\TextInput::make('supplier_name')
                                     ->label('Supplier')
-                                    ->columnSpan(2),
+                                    ->columnSpan(2)
+                                    ->disabled()
+                                    ->dehydrated(false)
+                                    ->placeholder(InspectionAcceptanceReport::MISSING_VALUE_PLACEHOLDER),
                                 Forms\Components\TextInput::make('po_no')
                                     ->label('PO No.')
-                                    ->columnSpan(1),
+                                    ->columnSpan(1)
+                                    ->disabled()
+                                    ->dehydrated(false)
+                                    ->placeholder(InspectionAcceptanceReport::MISSING_VALUE_PLACEHOLDER),
                             ]),
                         Forms\Components\TextInput::make('requisitioning_office_dept')
                             ->label('Requisitioning Office / Department')
-                            ->columnSpanFull()
-                            ->required(),
+                            ->required()
+                            ->disabled()
+                            ->dehydrated()
+                            ->columnSpanFull(),
                     ]),
 
                 Forms\Components\Section::make('Items')
@@ -162,15 +172,18 @@ class InspectionAcceptanceResource extends Resource
                         Forms\Components\Repeater::make('items')
                             ->relationship('items')
                             ->schema([
-                                Forms\Components\Grid::make(6)
+                                Forms\Components\Grid::make(12)
                                     ->schema([
                                         Forms\Components\Select::make('supply_id')
                                             ->label('Supply')
                                             ->searchable()
                                             ->preload()
                                             ->options(fn () => Supply::query()
-                                                ->selectRaw("id, CONCAT(stock_no, ' - ', name) as display")
-                                                ->pluck('display', 'id'))
+                                                ->orderBy('stock_no')
+                                                ->get(['id', 'stock_no', 'name'])
+                                                ->mapWithKeys(fn (Supply $supply) => [
+                                                    $supply->id => trim("{$supply->stock_no} - {$supply->name}", ' -'),
+                                                ]))
                                             ->live()
                                             ->afterStateUpdated(function ($state, callable $set) {
                                                 if ($state) {
@@ -183,54 +196,54 @@ class InspectionAcceptanceResource extends Resource
                                                     }
                                                 }
                                             })
-                                            ->columnSpan(1),
+                                            ->columnSpan(2),
                                         Forms\Components\TextInput::make('stock_no')
                                             ->label('Stock No.')
-                                            ->columnSpan(1),
+                                            ->columnSpan(2)
+                                            ->disabled()
+                                            ->dehydrated(),
                                         Forms\Components\TextInput::make('unit')
                                             ->label('Unit')
-                                            ->columnSpan(1),
+                                            ->columnSpan(1)
+                                            ->disabled()
+                                            ->dehydrated(),
                                         Forms\Components\Textarea::make('description')
                                             ->label('Description')
                                             ->rows(2)
-                                            ->columnSpan(2),
+                                            ->columnSpan(3)
+                                            ->disabled()
+                                            ->dehydrated(),
                                         Forms\Components\TextInput::make('quantity')
                                             ->label('Qty Ordered')
                                             ->numeric()
                                             ->default(1)
                                             ->minValue(0)
-                                            ->columnSpan(1),
-                                        Forms\Components\TextInput::make('quantity_accepted')
-                                            ->label('Qty Accepted')
-                                            ->numeric()
-                                            ->default(0)
-                                            ->minValue(0)
-                                            ->columnSpan(1),
-                                        Forms\Components\TextInput::make('quantity_rejected')
-                                            ->label('Qty Rejected')
-                                            ->numeric()
-                                            ->default(0)
-                                            ->minValue(0)
-                                            ->columnSpan(1),
+                                            ->columnSpan(1)
+                                            ->disabled()
+                                            ->dehydrated(),
                                         Forms\Components\TextInput::make('unit_cost')
                                             ->label('Unit Cost')
                                             ->numeric()
                                             ->prefix('₱')
                                             ->minValue(0)
                                             ->default(0)
-                                            ->columnSpan(1),
+                                            ->columnSpan(1)
+                                            ->disabled()
+                                            ->dehydrated(),
                                         Forms\Components\Select::make('category_id')
                                             ->label('Category')
                                             ->relationship('category', 'name')
                                             ->searchable()
                                             ->preload()
                                             ->required()
-                                            ->columnSpan(1),
+                                            ->columnSpan(2),
                                     ]),
                             ])
-                            ->defaultItems(5)
+                            ->defaultItems(0)
                             ->maxItems(30)
-                            ->addActionLabel('Add Item'),
+                            ->addable(false)
+                            ->deletable(false)
+                            ->reorderable(false),
                     ]),
 
                 Forms\Components\Section::make('Inspection & Acceptance')
@@ -239,12 +252,24 @@ class InspectionAcceptanceResource extends Resource
                             ->schema([
                                 Forms\Components\Fieldset::make('Inspected by')
                                     ->schema([
-                                        Forms\Components\TextInput::make('inspector_name')
+                                        Forms\Components\Select::make('inspector_name')
                                             ->label('Name')
-                                            ->default('ANA FE B. GALANTO'),
-                                        Forms\Components\TextInput::make('inspector_designation')
+                                            ->options([
+                                                'ANA FE B. GALANTO' => 'ANA FE B. GALANTO',
+                                                'RODEL C. LINUGAO' => 'RODEL C. LINUGAO',
+                                                'CHERRIE LYN C. OLACO' => 'CHERRIE LYN C. OLACO',
+                                            ])
+                                            ->searchable()
+                                            ->required(),
+                                        Forms\Components\Select::make('inspector_designation')
                                             ->label('Designation')
-                                            ->default('Admin. Assistant II'),
+                                            ->options([
+                                                'Admin. Assistant II' => 'Admin. Assistant II',
+                                                'Admin. Assistant III' => 'Admin. Assistant III',
+                                                'Admin. Aide I' => 'Admin. Aide I',
+                                            ])
+                                            ->searchable()
+                                            ->required(),
                                         Forms\Components\DatePicker::make('inspection_date')
                                             ->label('Date')
                                             ->required(),
@@ -252,7 +277,7 @@ class InspectionAcceptanceResource extends Resource
                                             ->schema([
                                                 Forms\Components\Checkbox::make('inspection_complete')
                                                     ->label('Complete')
-                                                    ->default(true)
+                                                    //->default(true)
                                                     ->live()
                                                     ->afterStateUpdated(fn ($state, callable $set) => $state ? $set('inspection_partial', false) : null),
                                                 Forms\Components\Checkbox::make('inspection_partial')
@@ -263,12 +288,24 @@ class InspectionAcceptanceResource extends Resource
                                     ]),
                                 Forms\Components\Fieldset::make('Accepted by')
                                     ->schema([
-                                        Forms\Components\TextInput::make('acceptor_name')
+                                        Forms\Components\Select::make('acceptor_name')
                                             ->label('Name')
-                                            ->default('RHODELIA J. MANDOLADO'),
-                                        Forms\Components\TextInput::make('acceptor_designation')
+                                            ->options([
+                                                'RHODELIA J. MANDOLADO' => 'RHODELIA J. MANDOLADO',
+                                                'CHERRIE LYN C. OLACO' => 'CHERRIE LYN C. OLACO',
+                                                'RODEL C. LINUGAO' => 'RODEL C. LINUGAO',
+                                            ])
+                                            ->required()
+                                            ->searchable(),
+                                        Forms\Components\Select::make('acceptor_designation')
                                             ->label('Designation')
-                                            ->default('Admin. Officer IV'),
+                                            ->options([
+                                                'Admin. Officer IV' => 'Admin. Officer IV',
+                                                'Admin. Aide VI' =>  'Admin. Aide VI',
+                                                'Admin. Aide I' => 'Admin. Aide I',
+                                            ])
+                                            ->searchable()
+                                            ->required(),
                                         Forms\Components\DatePicker::make('acceptance_date')
                                             ->label('Date')
                                             ->required(),
@@ -276,7 +313,7 @@ class InspectionAcceptanceResource extends Resource
                                             ->schema([
                                                 Forms\Components\Checkbox::make('acceptance_complete')
                                                     ->label('Complete')
-                                                    ->default(true)
+                                                    //->default(true)
                                                     ->live()
                                                     ->afterStateUpdated(fn ($state, callable $set) => $state ? $set('acceptance_partial', false) : null),
                                                 Forms\Components\Checkbox::make('acceptance_partial')
@@ -290,9 +327,17 @@ class InspectionAcceptanceResource extends Resource
             ]);
     }
 
-    public static function getEloquentQuery(): \Illuminate\Database\Eloquent\Builder
+    public static function getEloquentQuery(): Builder
     {
-        return parent::getEloquentQuery()->with('items.supply');
+        return parent::getEloquentQuery()
+            ->with('items.supply')
+            // The Supplier and P.O. No. columns are sourced from the source
+            // Purchase Order through the model accessors, so eager-load the
+            // chain to avoid N+1 queries when listing reports.
+            ->with('po.bacResolution')
+            // Eager-load the BAC conversion count so the "BAC Status" column
+            // can mark IARs as "Converted to BAC" without N+1 queries.
+            ->withCount('bacResolutions');
     }
 
     public static function table(Table $table): Table
@@ -316,10 +361,14 @@ class InspectionAcceptanceResource extends Resource
 
                 Tables\Columns\TextColumn::make('supplier_name')
                     ->label('Supplier')
-                    ->searchable(),
+                    // Sourced from the source Purchase Order through the model
+                    // accessor; search both the stored snapshot and the PO.
+                    ->searchable(['supplier_name', 'po.supplier_name'])
+                    ->placeholder(InspectionAcceptanceReport::MISSING_VALUE_PLACEHOLDER),
                 Tables\Columns\TextColumn::make('po_no')
                     ->label('PO No.')
-                    ->searchable(),
+                    ->searchable(['po_no', 'po.po_no'])
+                    ->placeholder(InspectionAcceptanceReport::MISSING_VALUE_PLACEHOLDER),
                 Tables\Columns\TextColumn::make('date')
                     ->date()
                     ->sortable(),
@@ -332,6 +381,17 @@ class InspectionAcceptanceResource extends Resource
                     ->formatStateUsing(fn ($state) => ucfirst(str_replace('_', ' ', $state)))
                     ->color(fn (InspectionAcceptanceReport $record): string => $record->statusBadgeColor())
                     ->sortable(),
+                Tables\Columns\TextColumn::make('bac_resolutions_count')
+                    ->label('BAC Status')
+                    ->badge()
+                    ->formatStateUsing(fn (InspectionAcceptanceReport $record): string =>
+                        ($record->bac_resolutions_count ?? 0) > 0 ? 'Converted to BAC' : 'Eligible')
+                    ->color(fn (InspectionAcceptanceReport $record): string =>
+                        ($record->bac_resolutions_count ?? 0) > 0 ? 'success' : 'gray')
+                    ->icon(fn (InspectionAcceptanceReport $record): ?string =>
+                        ($record->bac_resolutions_count ?? 0) > 0 ? 'heroicon-o-check-badge' : null)
+                    ->description(fn (InspectionAcceptanceReport $record): ?string =>
+                        ($record->bac_resolutions_count ?? 0) > 0 ? 'IAR already used' : 'Available to convert'),
                 Tables\Columns\IconColumn::make('inspection_complete')
                     ->label('Insp. Complete')
                     ->boolean()
@@ -394,8 +454,11 @@ class InspectionAcceptanceResource extends Resource
                 Tables\Actions\Action::make('print')
                     ->label('Print IAR')
                     ->icon('heroicon-o-printer')
+                    ->visible(fn (): bool => ! CurrentUser::get()?->isRegionalDirector() && ! CurrentUser::get()?->isStaff() && ! CurrentUser::get()?->isDivisionChief())
                     ->url(fn (InspectionAcceptanceReport $record): string => route('iar.print', $record))
                     ->openUrlInNewTab(),
+                Tables\Actions\DeleteAction::make()
+                    ->visible(fn (): bool => CurrentUser::get()?->isAdmin()),
             ])
             ->bulkActions([
 

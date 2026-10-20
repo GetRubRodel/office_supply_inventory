@@ -30,7 +30,7 @@ class ForgotPasswordController extends Controller
     private const VERIFY_ATTEMPT_WINDOW = 60;
 
     /** OTP lifetime in seconds. */
-    private const OTP_TTL_SECONDS = 5;
+    private const OTP_TTL_SECONDS = 300;
 
     public function showRequestForm(): View
     {

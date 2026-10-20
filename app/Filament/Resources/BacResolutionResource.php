@@ -5,12 +5,17 @@ namespace App\Filament\Resources;
 use App\Support\CurrentUser;
 
 use App\Filament\Resources\BacResolutionResource\Pages;
+use App\Models\AbstractOfCanvass;
 use App\Models\BacResolution;
+use App\Services\ProcurementBadgeService;
+use App\Support\BacResolutionText;
 use Filament\Forms;
 use Filament\Forms\Form;
+use Filament\Forms\Get;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
 
 class BacResolutionResource extends Resource
 {
@@ -24,13 +29,29 @@ class BacResolutionResource extends Resource
         $user = CurrentUser::get();
         if (! $user) return false;
 
-        return $user->hasPermissionTo('bac_resolutions.create');
+        return $user->hasPermissionTo('bac_resolutions.create')
+            && static::hasEligibleSource();
+    }
+
+    /**
+     * A BAC Resolution can only be created when at least one Abstract of
+     * Bids and Canvass (ABC) exists that has not yet been converted into a
+     * BAC Resolution.
+     */
+    public static function hasEligibleSource(): bool
+    {
+        return ProcurementBadgeService::eligibleQuery(ProcurementBadgeService::STAGE_BAC)->exists();
     }
 
     public static function canEdit(mixed $record = null): bool
     {
         $user = CurrentUser::get();
         if (! $user) return false;
+
+        // Division Chief may not edit BAC Resolution records.
+        if ($user->isDivisionChief()) {
+            return false;
+        }
 
         return $user->hasPermissionTo('bac_resolutions.update');
     }
@@ -40,6 +61,11 @@ class BacResolutionResource extends Resource
         $user = CurrentUser::get();
         if (! $user) return false;
 
+        // Supply Officer may not delete BAC Resolution records.
+        if ($user->isSupplyOfficer()) {
+            return false;
+        }
+
         return $user->hasPermissionTo('bac_resolutions.delete');
     }
 
@@ -47,83 +73,241 @@ class BacResolutionResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-scale';
 
-    protected static ?string $navigationGroup = 'Purchase Management';
+    protected static ?string $navigationGroup = 'Procurement Management';
 
-    protected static ?int $navigationSort = 11;
+    protected static ?int $navigationSort = 9;
+
+    public static function getNavigationBadge(): ?string
+    {
+        return ProcurementBadgeService::badgeFor(ProcurementBadgeService::STAGE_BAC, CurrentUser::get());
+    }
+
+    public static function getNavigationBadgeColor(): ?string
+    {
+        return 'warning';
+    }
+
+    /**
+     * Divisions offered by the first blank, keyed by value so the Select
+     * stores the division name itself (and not the array index).
+     *
+     * @return array<string, string>
+     */
+    public static function divisionOptions(): array
+    {
+        return array_combine(BacResolution::DIVISIONS, BacResolution::DIVISIONS);
+    }
 
     public static function form(Form $form): Form
     {
-        $defaultPreamble = "WHEREAS, the Government Procurement Policy Board (GPPB) through its Resolution No. 24-2019 dated 30 October 2019 resolved to approved the inclusion of Section 53.14 in the 2016 Revised IRR of RA 9184 on the Direct Retail Purchase (DRP) of Petroleum Fuel, Oil and Lubricant (POL) products and the amendments to the affected provisions of its Annex \u201cH\u201d entitled \u201cConsolidated Guidelines for the Alternative Methods of Procurement;\n\nWHEREAS, under the aforementioned Section, DRP is allowed where it is found to be the best modality for the procurement of non-bulk POL products\u2026;\n\nWHEREAS, Direct Retail Purchase falls under Negotiated Procurement of Section 53 as an alternative mode of procurement and is therefore subject to the rules and procedures stated in Annex H;\n\nWHEREAS, under Annex H, General Guidelines, item J, the BAC and the HOPE are directed to issue a resolution to delegate to specific officials, personnel, committee or office in the Procuring Entity the conduct of Direct Retail Purchase to efficiently and expeditiously deal with the pressing need sought to be addressed;";
-
-        $defaultOperative = "NOW, THEREFORE, for and in consideration of the foregoing premises, hereby resolve as it is hereby resolved to RECOMMEND to apply Section 53.14 of the 2016 revised IRR of R.A. No. 9184 as mode for the purchase of POL products;";
-
-        $defaultFurther = "FURTHER RESOLVED, to delegate and authorize the Commission on Human Rights Regional Office XII (CHR XII) to procure the fuel allocation for CHR official vehicles under Direct Retail Purchase (DRP) through cash advance and/or reimbursement.";
-
-        $defaultClosing = "SO RESOLVED.";
-
         return $form
             ->schema([
+
+                Forms\Components\Section::make('Source Abstract of Bids and Canvass (ABC)')
+                    ->description('A BAC Resolution is created from an existing ABC. Only ABCs that have not yet been converted into a BAC Resolution can be selected — the details below are loaded automatically from the selected ABC.')
+                    ->schema([
+                        Forms\Components\Select::make('abc_id')
+                            ->label('Source ABC')
+                            ->placeholder('Select an eligible ABC to load its details...')
+                            ->required(fn (string $operation): bool => $operation === 'create')
+                            ->disabled(fn (string $operation): bool => $operation === 'edit')
+                            ->searchable()
+                            ->live()
+                            ->options(function (?BacResolution $record): array {
+                                return AbstractOfCanvass::query()
+                                    ->with('winningSupplier')
+                                    ->withCount(['items', 'bacResolutions'])
+                                    ->where(function (Builder $query) use ($record) {
+                                        $query->eligibleForBacConversion();
+
+                                        // Keep the already-linked ABC selectable so the
+                                        // label resolves on edit/view pages.
+                                        if ($record?->abc_id) {
+                                            $query->orWhere('id', $record->abc_id);
+                                        }
+                                    })
+                                    ->orderByDesc('created_at')
+                                    ->get()
+                                    ->mapWithKeys(function (AbstractOfCanvass $abc) {
+                                        $converted = $abc->bac_resolutions_count > 0 ? ' — Converted' : '';
+
+                                        return [$abc->id => "{$abc->abc_no} — {$abc->winningSupplierName()} ({$abc->items_count} items){$converted}"];
+                                    })
+                                    ->all();
+                            })
+                            ->validationMessages([
+                                'required' => 'Please select the Abstract of Bids and Canvass (ABC) to convert.',
+                            ])
+                            ->afterStateUpdated(function ($state, callable $set) {
+                                /** @var \App\Models\AbstractOfCanvass|null $abc */
+                                $abc = AbstractOfCanvass::find($state);
+                                if ($abc) {
+                                    // BAC member details always come from the
+                                    // source ABC's "Committee on Awards".
+                                    $set('chairperson_name', $abc->chairman_name);
+                                    $set('chairperson_designation', $abc->chairman_designation);
+                                    $set('vice_chairperson_name', $abc->vice_chairman_name);
+                                    $set('vice_chairperson_designation', $abc->vice_chairman_designation);
+                                    $set('member1_name', $abc->member1_name);
+                                    $set('member1_designation', $abc->member1_designation);
+                                    $set('member2_name', $abc->member2_name);
+                                    $set('member2_designation', $abc->member2_designation);
+                                    $set('member3_name', $abc->member3_name);
+                                    $set('member3_designation', $abc->member3_designation);
+                                    // Approval details always come from the
+                                    // source ABC's "Approved by" section.
+                                    $set('approved_by_name', $abc->approved_by_name);
+                                    $set('approved_by_designation', $abc->approved_by_designation);
+                                    // Winning supplier always comes from the
+                                    // source ABC's lowest valid total bid.
+                                    $set('supplier_name', $abc->winningSupplierName());
+                                }
+                            })
+                            ->columnSpanFull(),
+                        Forms\Components\Placeholder::make('abc_details_preview')
+                            ->label('ABC Details')
+                            ->content(fn (Get $get) => view('bac.abc-preview', ['abcId' => $get('abc_id')]))
+                            ->columnSpanFull(),
+                    ]),
+
+                Forms\Components\Section::make('Winning Supplier & Items')
+                    ->description('Automatically retrieved from the source ABC — the supplier with the lowest valid total bid. Unit costs, total costs and the total amount all come from that same winning supplier.')
+                    ->schema([
+                        Forms\Components\TextInput::make('supplier_name')
+                            ->label('Winning Supplier')
+                            ->disabled()
+                            ->dehydrated(false),
+                        Forms\Components\Placeholder::make('bac_items_preview')
+                            ->label('Items & Total Amount')
+                            ->content(fn (Get $get) => view('bac.items-preview', ['abcId' => $get('abc_id')]))
+                            ->columnSpanFull(),
+                    ]),
+
                 Forms\Components\Section::make('BIDS AND AWARDS COMMITTEE (BAC)')
                     ->description('Resolution')
                     ->schema([
                         Forms\Components\Grid::make(4)
                             ->schema([
                                 Forms\Components\TextInput::make('resolution_no')
-                                    ->label('Resolution No.')
+                                    ->label('BAC RESO. No.')
                                     ->disabled()
                                     ->dehydrated(false)
-                                    ->hint('Auto-generated: MM-SSS')
                                     ->columnSpan(2),
                                 Forms\Components\DatePicker::make('date')
                                     ->label('Date')
-                                    ->default(now())
+                                    ->minDate(now()->startOfDay())
                                     ->required()
                                     ->columnSpan(1),
                                 Forms\Components\TextInput::make('place')
                                     ->label('Place')
                                     ->default('Koronadal City, Philippines')
+                                    ->disabled()
+                                    ->dehydrated(false)
                                     ->columnSpan(1),
                             ]),
                     ]),
 
-                Forms\Components\Section::make('Title / Subject')
+                Forms\Components\Section::make('Resolution')
                     ->schema([
-                        Forms\Components\Textarea::make('title')
-                            ->label('Resolution Title')
-                            ->placeholder('AUTHORIZING THE CHR XII TO PROCURE...')
-                            ->rows(3)
-                            ->columnSpanFull(),
-                    ]),
+                        Forms\Components\Grid::make(2)
+                            ->schema([
+                                Forms\Components\Select::make('division')
+                                    ->options(self::divisionOptions())
+                                    ->required()
+                                    ->searchable()
+                                    ->live()
+                                    ->native(false)
+                                    // Blank 2 and Blank 4 both retrieve this value.
+                                    ->afterStateUpdated(function ($state, callable $set) {
+                                        $resolved = BacResolutionText::resolve(
+                                            BacResolutionText::DIVISION_TOKEN,
+                                            $state,
+                                            null,
+                                        );
 
-                Forms\Components\Section::make('Preamble (WHEREAS Clauses)')
-                    ->schema([
-                        Forms\Components\Textarea::make('preamble')
-                            ->label('')
-                            ->rows(12)
-                            ->default($defaultPreamble)
-                            ->columnSpanFull(),
-                    ]),
+                                        $set('division_blank_2', $resolved);
+                                        $set('division_blank_4', $resolved);
+                                    })
+                                    ->columnSpan(1),
 
-                Forms\Components\Section::make('Operative Part')
-                    ->schema([
-                        Forms\Components\Textarea::make('operative_part')
-                            ->label('NOW, THEREFORE...')
-                            ->rows(4)
-                            ->default($defaultOperative)
-                            ->columnSpanFull(),
-                        Forms\Components\Textarea::make('further_resolved')
-                            ->label('FURTHER RESOLVED...')
-                            ->rows(4)
-                            ->default($defaultFurther)
-                            ->columnSpanFull(),
-                        Forms\Components\Textarea::make('closing')
-                            ->label('Closing')
-                            ->rows(2)
-                            ->default($defaultClosing)
+                                Forms\Components\TextInput::make('division_blank_2')
+                                    ->label('2nd Blank — Division')
+                                    ->readOnly()
+                                    ->dehydrated(false)
+                                    ->default(fn (Get $get): string => BacResolutionText::resolve(
+                                        BacResolutionText::DIVISION_TOKEN,
+                                        $get('division'),
+                                    ))
+                                    ->extraInputAttributes([
+                                        'class' => 'bg-gray-50 text-gray-600',
+                                        'readonly' => 'readonly',
+                                        'tabindex' => '-1',
+                                    ])
+                                    ->hidden()
+                                    ->columnSpan(1),
+
+                                Forms\Components\TextInput::make('budget_amount')
+                                    ->label('Budget Amount')
+                                    ->placeholder('Ex: Amount in words (P0,000)')
+                                    ->required()
+                                    ->live(onBlur: true)
+                                    ->maxLength(255)
+                                    // Blank 5 retrieves this value.
+                                    ->afterStateUpdated(fn ($state, callable $set) => $set(
+                                        'budget_blank_5',
+                                        BacResolutionText::resolve(BacResolutionText::BUDGET_TOKEN, null, $state),
+                                    ))
+                                    ->columnSpan(1
+                                    ),
+
+                                Forms\Components\TextInput::make('division_blank_4')
+                                    ->label('4th Blank — Division')
+                                    ->readOnly()
+                                    ->dehydrated(false)
+                                    ->default(fn (Get $get): string => BacResolutionText::resolve(
+                                        BacResolutionText::DIVISION_TOKEN,
+                                        $get('division'),
+                                    ))
+                                    ->extraInputAttributes([
+                                        'class' => 'bg-gray-50 text-gray-600',
+                                        'readonly' => 'readonly',
+                                        'tabindex' => '-1',
+                                    ])
+                                    ->hidden()
+                                    ->columnSpan(1),
+
+                                Forms\Components\TextInput::make('budget_blank_5')
+                                    ->label('5th Blank — Budget Amount')
+                                    ->readOnly()
+                                    ->dehydrated(false)
+                                    ->default(fn (Get $get): string => BacResolutionText::resolve(
+                                        BacResolutionText::BUDGET_TOKEN,
+                                        null,
+                                        $get('budget_amount'),
+                                    ))
+                                    ->extraInputAttributes([
+                                        'class' => 'bg-gray-50 text-gray-600',
+                                        'readonly' => 'readonly',
+                                        'tabindex' => '-1',
+                                    ])
+                                    ->hidden()
+                                    ->columnSpan(1),
+                            ]),
+
+                        Forms\Components\Placeholder::make('resolution_preview')
+                            ->label('Resolution Text')
+                            ->content(fn (Get $get) => view('bac.resolution-preview', [
+                                'blocks' => BacResolutionText::blocks(
+                                    $get('division'),
+                                    $get('budget_amount'),
+                                    $get('date'),
+                                ),
+                            ]))
                             ->columnSpanFull(),
                     ]),
 
                 Forms\Components\Section::make('BAC Members')
+                    ->description('Automatically retrieved from the source ABC — Committee on Awards.')
                     ->schema([
                         Forms\Components\Grid::make(5)
                             ->schema([
@@ -131,68 +315,81 @@ class BacResolutionResource extends Resource
                                     ->schema([
                                         Forms\Components\TextInput::make('chairperson_name')
                                             ->label('Name')
-                                            ->default('MIGUEL A. PEÑALOZA'),
+                                            ->disabled()
+                                            ->dehydrated(false),
                                         Forms\Components\TextInput::make('chairperson_designation')
                                             ->label('Designation')
-                                            ->default('Chairperson'),
+                                            ->disabled()
+                                            ->dehydrated(false),
                                     ]),
                                 Forms\Components\Fieldset::make('Vice-Chairperson')
                                     ->schema([
                                         Forms\Components\TextInput::make('vice_chairperson_name')
                                             ->label('Name')
-                                            ->default('ATTY. MAE P. GALONG'),
+                                            ->disabled()
+                                            ->dehydrated(false),
                                         Forms\Components\TextInput::make('vice_chairperson_designation')
                                             ->label('Designation')
-                                            ->default('Vice-Chairperson'),
+                                            ->disabled()
+                                            ->dehydrated(false),
                                     ]),
                                 Forms\Components\Fieldset::make('Member 1')
                                     ->schema([
                                         Forms\Components\TextInput::make('member1_name')
                                             ->label('Name')
-                                            ->default('ARNOLD B. AUMENTO'),
+                                            ->disabled()
+                                            ->dehydrated(false),
                                         Forms\Components\TextInput::make('member1_designation')
                                             ->label('Designation')
-                                            ->default('Member'),
+                                            ->disabled()
+                                            ->dehydrated(false),
                                     ]),
                                 Forms\Components\Fieldset::make('Member 2')
                                     ->schema([
                                         Forms\Components\TextInput::make('member2_name')
                                             ->label('Name')
-                                            ->default('RIZALYN C. ISNANI-CONCHA'),
+                                            ->disabled()
+                                            ->dehydrated(false),
                                         Forms\Components\TextInput::make('member2_designation')
                                             ->label('Designation')
-                                            ->default('Member'),
+                                            ->disabled()
+                                            ->dehydrated(false),
                                     ]),
                                 Forms\Components\Fieldset::make('Member 3')
                                     ->schema([
                                         Forms\Components\TextInput::make('member3_name')
                                             ->label('Name')
-                                            ->default('ATTY. REUBEN P. ESCARLAN'),
+                                            ->disabled()
+                                            ->dehydrated(false),
                                         Forms\Components\TextInput::make('member3_designation')
                                             ->label('Designation')
-                                            ->default('Member'),
+                                            ->disabled()
+                                            ->dehydrated(false),
                                     ]),
                             ]),
                     ]),
 
                 Forms\Components\Section::make('Approved by')
+                    ->description('Automatically retrieved from the source ABC — Approved by.')
                     ->schema([
                         Forms\Components\Grid::make(2)
                             ->schema([
                                 Forms\Components\TextInput::make('approved_by_name')
                                     ->label('Name')
-                                    ->default('ATTY. KEYSIE M. GOMEZ'),
+                                    ->disabled()
+                                    ->dehydrated(false),
                                 Forms\Components\TextInput::make('approved_by_designation')
                                     ->label('Designation')
-                                    ->default('Head of the Procuring Entity'),
+                                    ->disabled()
+                                    ->dehydrated(false),
                             ]),
                     ]),
             ]);
     }
 
-    public static function getEloquentQuery(): \Illuminate\Database\Eloquent\Builder
+    public static function getEloquentQuery(): Builder
     {
-        return parent::getEloquentQuery()->with('editingUser');
+        return parent::getEloquentQuery()->with(['editingUser', 'abc']);
     }
 
     public static function table(Table $table): Table
@@ -200,25 +397,39 @@ class BacResolutionResource extends Resource
         return $table
             ->columns([
                 Tables\Columns\TextColumn::make('resolution_no')
-                    ->label('Res. No.')
+                    ->label('BAC RESO. No.')
                     ->searchable()
                     ->sortable(),
+                Tables\Columns\TextColumn::make('abc.abc_no')
+                    ->label('ABC No'),
+                Tables\Columns\TextColumn::make('division')
+                    ->label('Division')
+                    ->badge()
+                    ->color('info')
+                    ->searchable()
+                    ->sortable()
+                    ->placeholder('—'),
+                Tables\Columns\TextColumn::make('budget_amount')
+                    ->label('Budget Amount')
+                    ->searchable()
+                    ->placeholder('—'),
                 Tables\Columns\TextColumn::make('editingDisplayName')
                     ->label('Editing')
                     ->badge()
                     ->color('warning')
                     ->icon('heroicon-o-lock-open')
-                    ->placeholder('—'),
+                    ->placeholder('—')
+                    ->toggleable(isToggledHiddenByDefault: true),
                 Tables\Columns\TextColumn::make('title')
                     ->label('Title')
                     ->limit(60)
-                    ->searchable(),
+                    ->searchable()
+                    ->toggleable(isToggledHiddenByDefault: true),
                 Tables\Columns\TextColumn::make('date')
-                    ->date()
+                    ->date('F j, Y')
                     ->sortable(),
                 Tables\Columns\TextColumn::make('place')
-                    ->label('Place')
-                    ->toggleable(isToggledHiddenByDefault: true),
+                    ->label('Place'),
                 Tables\Columns\TextColumn::make('created_at')
                     ->dateTime()
                     ->sortable()
@@ -233,10 +444,11 @@ class BacResolutionResource extends Resource
                 Tables\Actions\Action::make('print')
                     ->label('Print Resolution')
                     ->icon('heroicon-o-printer')
+                    ->visible(fn (): bool => ! CurrentUser::get()?->isRegionalDirector() && ! CurrentUser::get()?->isStaff() && ! CurrentUser::get()?->isDivisionChief())
                     ->url(fn (BacResolution $record): string => route('bac.print', $record))
                     ->openUrlInNewTab(),
                 Tables\Actions\EditAction::make()
-                    ->visible(fn (): bool => CurrentUser::get()?->hasPermissionTo('bac_resolutions.update')),
+                    ->visible(fn (): bool => CurrentUser::get()?->hasPermissionTo('bac_resolutions.update') && ! CurrentUser::get()?->isDivisionChief()),
                 Tables\Actions\DeleteAction::make()
                     ->visible(fn (): bool => CurrentUser::get()?->hasPermissionTo('bac_resolutions.delete')),
             ])

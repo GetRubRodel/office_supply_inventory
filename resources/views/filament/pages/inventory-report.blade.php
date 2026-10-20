@@ -13,9 +13,16 @@
             <x-filament::button wire:click="resetFilters" color="gray">
                 Reset
             </x-filament::button>
-            <x-filament::button wire:click="printReport" color="warning" icon="heroicon-m-printer">
-                Print
-            </x-filament::button>
+            @if ($this->canPrintReport())
+                <x-filament::button wire:click="printReport" color="warning" icon="heroicon-m-printer">
+                    Print
+                </x-filament::button>
+            @endif
+            @if ($this->canDownloadReport())
+                <x-filament::button wire:click="downloadReport" color="success" icon="heroicon-m-arrow-down-tray">
+                    Download
+                </x-filament::button>
+            @endif
         </div>
     </x-filament-panels::form>
 
@@ -191,7 +198,7 @@
                 document.body.innerHTML =
                     '<div style="padding: 20px; font-family: Arial, sans-serif;">' +
                         '<h1 style="text-align: center; margin-bottom: 20px;">Inventory Report</h1>' +
-                        '<p style="text-align: center; color: #666; margin-bottom: 30px;">Generated on ' + '{{ now()->format("Y-m-d H:i:s") }}' + '</p>' +
+                        '<p style="text-align: center; color: #666; margin-bottom: 30px;">Generated on ' + '{{ \App\Support\ReportClock::format("Y-m-d H:i:s") }} (PST)' + '</p>' +
                         printContents +
                     '</div>';
 

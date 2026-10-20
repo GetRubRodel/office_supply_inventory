@@ -6,6 +6,7 @@ use App\Models\Supplier;
 use App\Models\User;
 use Illuminate\Auth\Access\HandlesAuthorization;
 
+
 class SupplierPolicy
 {
     use HandlesAuthorization;
@@ -22,20 +23,28 @@ class SupplierPolicy
 
     public function create(User $user): bool
     {
-        // Only the Administrator and Supply Officer roles may create suppliers.
-        return $user->hasRole([
-            User::ROLE_ADMIN,
-            User::ROLE_SUPPLY_OFFICER,
-        ]);
+        // Roles granted the suppliers.create permission (Administrator,
+        // Supply Officer, Property Custodian) may create suppliers.
+        return $user->hasPermissionTo('suppliers.create');
     }
 
     public function update(User $user, Supplier $supplier): bool
     {
+        // Division Chief may not update Supplier records.
+        if ($user->isDivisionChief()) {
+            return false;
+        }
+
         return $user->hasPermissionTo('suppliers.update');
     }
 
     public function delete(User $user, Supplier $supplier): bool
     {
+        // Supply Officer may not delete Supplier records.
+        if ($user->isSupplyOfficer()) {
+            return false;
+        }
+
         return $user->hasPermissionTo('suppliers.delete');
     }
 }

@@ -24,9 +24,6 @@ class Supply extends Model
         'unit_cost',
         'total_cost',
         'status',
-        'reference_number',
-        'last_received_date',
-        'latest_reference_number',
     ];
 
     protected $casts = [
@@ -113,6 +110,10 @@ class Supply extends Model
      */
     public function receiveStock(int $quantity, float $unitCost, string|null|\DateTime $referenceNumber = null, string|null|\DateTime $dateReceived = null): void
     {
+        if ($quantity <= 0) {
+            throw new \InvalidArgumentException('Received quantity must be greater than zero.');
+        }
+
         $oldQty = $this->current_stock;
         $oldMac = (float) ($this->unit_cost ?? $this->average_unit_cost ?? 0);
 
@@ -130,7 +131,7 @@ class Supply extends Model
         $this->current_stock      = $newQty;
         $this->unit_cost          = $newMac;           // single source of MAC
         $this->average_unit_cost  = $newMac;           // kept in sync for DB backward compatibility
-        $this->total_cost         = $newQty * $newMac;
+        $this->total_cost         = round($newQty * $newMac, 2);
 
         // Track last receipt info for quick reference
         if ($referenceNumber !== null) {
@@ -149,13 +150,27 @@ class Supply extends Model
      * Per accounting rules, the unit cost (MAC) is NOT changed during stock-out.
      * Only current_stock and total_cost are reduced.
      *
+     * Guards against negative stock: issuing more than the available quantity
+     * throws instead of silently writing a negative balance.
+     *
      * @param int    $quantity         Quantity to issue
      * @param string|null $referenceNumber  Optional reference (e.g. RIS no.)
+     * @throws \RuntimeException When there is insufficient stock to cover the issue.
      */
     public function issueStock(int $quantity, string|null $referenceNumber = null): void
     {
+        if ($quantity < 0) {
+            throw new \InvalidArgumentException('Issue quantity cannot be negative.');
+        }
+
+        if ($quantity > $this->current_stock) {
+                throw new \RuntimeException(
+                    'Insufficient stock. The requested quantity cannot exceed the available stock.'
+                );
+        }
+
         $this->current_stock = $this->current_stock - $quantity;
-        $this->total_cost    = $this->current_stock * (float) $this->unit_cost;
+        $this->total_cost    = round($this->current_stock * (float) $this->unit_cost, 2);
 
         if ($referenceNumber !== null) {
             $this->reference_number = $referenceNumber;

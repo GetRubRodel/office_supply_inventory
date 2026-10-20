@@ -28,7 +28,6 @@ class UserStatsOverviewWidget extends BaseWidget
         $regionalDirectors = User::where('role', User::ROLE_REGIONAL_DIRECTOR)->count();
         $divisionChiefs = User::where('role', User::ROLE_DIVISION_CHIEF)->count();
         $supplyOfficers = User::where('role', User::ROLE_SUPPLY_OFFICER)->count();
-        $propertyCustodians = User::where('role', User::ROLE_PROPERTY_CUSTODIAN)->count();
         $staff = User::where('role', User::ROLE_STAFF)->count();
 
         return [
@@ -56,11 +55,6 @@ class UserStatsOverviewWidget extends BaseWidget
                 ->description('Supply officer accounts')
                 ->descriptionIcon('heroicon-m-archive-box')
                 ->color('warning'),
-
-            Stat::make('Property Custodians', number_format($propertyCustodians))
-                ->description('Property custodian accounts')
-                ->descriptionIcon('heroicon-m-key')
-                ->color('gray'),
 
             Stat::make('Staff', number_format($staff))
                 ->description('General staff accounts')

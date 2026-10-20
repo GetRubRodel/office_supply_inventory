@@ -32,6 +32,11 @@ class CategoryResource extends Resource
         $user = CurrentUser::get();
         if (! $user) return false;
 
+        // Division Chief may not edit Category records.
+        if ($user->isDivisionChief()) {
+            return false;
+        }
+
         return $user->hasPermissionTo('categories.update');
     }
 
@@ -39,6 +44,11 @@ class CategoryResource extends Resource
     {
         $user = CurrentUser::get();
         if (! $user) return false;
+
+        // Supply Officer may not delete Category records.
+        if ($user->isSupplyOfficer()) {
+            return false;
+        }
 
         return $user->hasPermissionTo('categories.delete');
     }
@@ -118,11 +128,14 @@ class CategoryResource extends Resource
             ])
             ->actions([
                 Tables\Actions\EditAction::make(),
-                Tables\Actions\DeleteAction::make(),
+                Tables\Actions\ViewAction::make(),
+                Tables\Actions\DeleteAction::make()
+                    ->visible(fn (): bool => ! CurrentUser::get()?->isSupplyOfficer()),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
-                    Tables\Actions\DeleteBulkAction::make(),
+                    Tables\Actions\DeleteBulkAction::make()
+                        ->visible(fn (): bool => ! CurrentUser::get()?->isSupplyOfficer()),
                 ]),
             ]);
     }

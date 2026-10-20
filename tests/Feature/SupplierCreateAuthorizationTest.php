@@ -29,7 +29,7 @@ class SupplierCreateAuthorizationTest extends TestCase
         // (which mounts every page and checks its *.view permission) never hits
         // Spatie's PermissionDoesNotExist. Role assignments below mirror the live
         // production role_has_permissions table, not the seeder.
-        $modules = ['dashboard', 'users', 'supplies', 'suppliers', 'categories', 'purchase_requests', 'request_for_quotations', 'abstracts_of_canvass', 'purchase_orders', 'inspection_acceptance_reports', 'bac_resolutions', 'requisitions', 'rpcis', 'rsmi_reports', 'inventory_reports', 'audit_logs', 'system_settings', 'stock_in'];
+        $modules = ['dashboard', 'users', 'supplies', 'suppliers', 'categories', 'purchase_requests', 'request_for_quotations', 'abstracts_of_canvass', 'purchase_orders', 'inspection_acceptance_reports', 'bac_resolutions', 'requisitions', 'rpcis', 'rsmi_reports', 'inventory_reports', 'procurement_monitoring_reports', 'audit_logs', 'system_settings', 'stock_in'];
         foreach ($modules as $module) {
             foreach (['view', 'create', 'update', 'delete', 'approve'] as $action) {
                 Permission::findOrCreate("{$module}.{$action}", 'web');
@@ -44,10 +44,10 @@ class SupplierCreateAuthorizationTest extends TestCase
         $rolePermissions = [
             'admin' => ['suppliers.view', 'suppliers.create', 'suppliers.update', 'suppliers.delete'],
             'supply_officer' => ['suppliers.view', 'suppliers.create', 'suppliers.update', 'suppliers.delete'],
-            'property_custodian' => ['suppliers.view'],
+            'property_custodian' => ['suppliers.view', 'suppliers.create', 'suppliers.update', 'suppliers.delete'],
             'division_chief' => ['suppliers.view'],
             'staff' => [],
-            'regional_director' => [],
+            'regional_director' => ['suppliers.view'],
         ];
 
         foreach ($rolePermissions as $role => $permissions) {
@@ -58,7 +58,6 @@ class SupplierCreateAuthorizationTest extends TestCase
     private function makeUser(string $role): User
     {
         $user = User::factory()->create([
-            'username' => 'u'.uniqid(),
             'role' => $role,
             'status' => 'approved',
         ]);
@@ -67,20 +66,22 @@ class SupplierCreateAuthorizationTest extends TestCase
         return $user;
     }
 
-    public function test_policy_allows_create_only_for_admin_and_supply_officer(): void
+    public function test_policy_allows_create_only_for_admin_supply_officer_and_property_custodian(): void
     {
-        foreach (['admin', 'supply_officer'] as $role) {
+        foreach (['admin', 'supply_officer', 'property_custodian'] as $role) {
             $this->assertTrue($this->makeUser($role)->can('create', Supplier::class), "$role should be allowed");
         }
 
-        foreach (['property_custodian', 'division_chief', 'staff', 'regional_director'] as $role) {
+        foreach (['division_chief', 'staff', 'regional_director'] as $role) {
             $this->assertFalse($this->makeUser($role)->can('create', Supplier::class), "$role should be denied");
         }
     }
 
-    public function test_create_button_is_visible_for_admin_and_supply_officer(): void
+    public function test_create_button_is_visible_for_roles_with_create_permission(): void
     {
-        foreach (['admin', 'supply_officer'] as $role) {
+        // Roles granted suppliers.create (Administrator, Supply Officer,
+        // Property Custodian) see the create button on the list page.
+        foreach (['admin', 'supply_officer', 'property_custodian'] as $role) {
             $this->actingAs($this->makeUser($role))
                 ->get('/admin/suppliers')
                 ->assertOk()
@@ -91,7 +92,7 @@ class SupplierCreateAuthorizationTest extends TestCase
     public function test_create_button_is_hidden_for_read_only_roles(): void
     {
         // Roles that can open the Supplier list (have suppliers.view) but must not create.
-        foreach (['property_custodian', 'division_chief'] as $role) {
+        foreach (['division_chief', 'regional_director'] as $role) {
             $this->actingAs($this->makeUser($role))
                 ->get('/admin/suppliers')
                 ->assertOk()
@@ -99,31 +100,38 @@ class SupplierCreateAuthorizationTest extends TestCase
         }
     }
 
-    public function test_module_is_inaccessible_for_staff_and_regional_director(): void
+    public function test_module_is_inaccessible_for_staff(): void
     {
         // No suppliers.view at all -> the whole module is hidden, so no create button.
-        foreach (['staff', 'regional_director'] as $role) {
-            $this->actingAs($this->makeUser($role))
-                ->get('/admin/suppliers')
-                ->assertForbidden();
-        }
+        $this->actingAs($this->makeUser('staff'))
+            ->get('/admin/suppliers')
+            ->assertForbidden();
     }
 
-    public function test_direct_url_is_denied_for_all_non_creator_roles(): void
+    public function test_regional_director_can_view_suppliers_without_create(): void
     {
-        foreach (['property_custodian', 'division_chief', 'staff', 'regional_director'] as $role) {
-            $this->actingAs($this->makeUser($role))
-                ->get('/admin/suppliers/create')
-                ->assertForbidden();
-        }
+        // Regional Director has suppliers.view (viewer-only) -> the module is
+        // visible and the list loads, but the create button is not shown.
+        $this->actingAs($this->makeUser('regional_director'))
+            ->get('/admin/suppliers')
+            ->assertOk()
+            ->assertDontSee('/admin/suppliers/create', false);
     }
 
-    public function test_direct_url_is_allowed_for_admin_and_supply_officer(): void
+    public function test_direct_url_is_allowed_for_create_roles_and_denied_for_others(): void
     {
-        foreach (['admin', 'supply_officer'] as $role) {
+        // Roles with suppliers.create can open the create page; every other
+        // role is blocked at the resource level (canCreate()).
+        foreach (['admin', 'supply_officer', 'property_custodian'] as $role) {
             $this->actingAs($this->makeUser($role))
                 ->get('/admin/suppliers/create')
                 ->assertOk();
+        }
+
+        foreach (['division_chief', 'staff', 'regional_director'] as $role) {
+            $this->actingAs($this->makeUser($role))
+                ->get('/admin/suppliers/create')
+                ->assertForbidden();
         }
     }
 }
