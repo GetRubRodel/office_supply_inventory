@@ -20,6 +20,7 @@ class ViewPurchaseOrder extends ViewRecord
             Actions\Action::make('print')
                 ->label('Print PO')
                 ->icon('heroicon-o-printer')
+                ->visible(fn (): bool => ! CurrentUser::get()?->isRegionalDirector() && ! CurrentUser::get()?->isStaff() && ! CurrentUser::get()?->isDivisionChief())
                 ->url(fn () => route('po.print', $this->record))
                 ->openUrlInNewTab(),
             Actions\EditAction::make()

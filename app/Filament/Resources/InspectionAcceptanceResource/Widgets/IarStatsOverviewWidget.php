@@ -30,7 +30,7 @@ class IarStatsOverviewWidget extends BaseWidget
         $stockedIn = InspectionAcceptanceReport::where('status', InspectionAcceptanceReport::STATUS_STOCKED_IN)
             ->count();
 
-        $totalReceivedItems = IarItem::sum('quantity_accepted');
+        $totalReceivedItems = IarItem::sum('quantity');
 
         return [
             Stat::make('Total IARs', number_format($totalIars))
@@ -49,7 +49,7 @@ class IarStatsOverviewWidget extends BaseWidget
                 ->color('success'),
 
             Stat::make('Total Received Items', number_format($totalReceivedItems))
-                ->description('Cumulative quantity accepted')
+                ->description('Cumulative quantity received')
                 ->descriptionIcon('heroicon-o-archive-box')
                 ->color('info'),
         ];

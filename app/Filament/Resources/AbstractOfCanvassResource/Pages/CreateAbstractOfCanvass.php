@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\AbstractOfCanvassResource\Pages;
 
 use App\Filament\Resources\AbstractOfCanvassResource;
+use App\Models\AbstractOfCanvass;
 use App\Models\Supplier;
 use App\Services\AbstractOfCanvassService;
 use Filament\Notifications\Notification;
@@ -20,7 +21,7 @@ class CreateAbstractOfCanvass extends CreateRecord
             Notification::make()
                 ->warning()
                 ->title('Cannot create Abstract of Bids and Canvass')
-                ->body('No Request for Quotation is available. Please create a Request for Quotation before creating an Abstract of Bids and Canvass.')
+                ->body(AbstractOfCanvass::NO_ELIGIBLE_RFQ_MESSAGE)
                 ->send();
 
             $this->redirect(AbstractOfCanvassResource::getUrl('index'));
@@ -38,6 +39,10 @@ class CreateAbstractOfCanvass extends CreateRecord
 
     protected function mutateFormDataBeforeSave(array $data): array
     {
+        // Guarantee sequential item numbers (1, 2, 3, …) regardless of the
+        // UI state when the form is submitted.
+        $data['items'] = AbstractOfCanvassService::renumberItems($data['items'] ?? []);
+
         $totals = AbstractOfCanvassService::supplierTotalsFromItems($data['items'] ?? []);
         $winnerIndex = AbstractOfCanvassService::lowestTotalIndex($totals);
         $tiedIndexes = AbstractOfCanvassService::tiedLowestIndexes($totals);

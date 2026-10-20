@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\InspectionAcceptanceResource\Pages;
 
 use App\Filament\Resources\InspectionAcceptanceResource;
+use App\Models\InspectionAcceptanceReport;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\CreateRecord;
 
@@ -18,7 +19,7 @@ class CreateInspectionAcceptanceReport extends CreateRecord
             Notification::make()
                 ->warning()
                 ->title('Cannot create Inspection and Acceptance Report')
-                ->body('No Purchase Order is available. Please create a Purchase Order before creating an Inspection and Acceptance Report.')
+                ->body(InspectionAcceptanceReport::NO_ELIGIBLE_PO_MESSAGE)
                 ->send();
 
             $this->redirect(InspectionAcceptanceResource::getUrl('index'));

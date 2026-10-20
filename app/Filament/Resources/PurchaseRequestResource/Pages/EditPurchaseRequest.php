@@ -22,17 +22,9 @@ class EditPurchaseRequest extends EditRecord
 
         $user = CurrentUser::get();
 
-        // Staff: only enforce ownership check for their own records
+        // Staff may only edit their own purchase requests.
         if ($user && $user->isOwnRecordsOnly() && $this->record->user_id !== $user->id) {
-            Notification::make()
-                ->warning()
-                ->title('Unauthorized')
-                ->body('You are not authorized to edit this Purchase Request.')
-                ->persistent()
-                ->send();
-            $this->redirect($this->getResource()::getUrl('index'));
-
-            return;
+            abort(403, 'You are not authorized to edit this purchase request.');
         }
 
         // Only admin or the original drafter can edit
@@ -78,6 +70,7 @@ class EditPurchaseRequest extends EditRecord
             Actions\Action::make('print')
                 ->label('Print PR')
                 ->icon('heroicon-o-printer')
+                ->visible(fn (): bool => ! CurrentUser::get()?->isRegionalDirector() && ! CurrentUser::get()?->isStaff() && ! CurrentUser::get()?->isDivisionChief())
                 ->url(fn () => route('pr.print', $this->record))
                 ->openUrlInNewTab(),
             Actions\DeleteAction::make(),

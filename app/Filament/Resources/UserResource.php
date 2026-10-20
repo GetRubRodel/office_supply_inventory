@@ -74,11 +74,6 @@ class UserResource extends Resource
                             ->label('Full Name')
                             ->required()
                             ->maxLength(255),
-                        Forms\Components\TextInput::make('username')
-                            ->label('Username')
-                            ->maxLength(255)
-                            ->unique(ignoreRecord: true)
-                            ->nullable(),
                         Forms\Components\TextInput::make('email')
                             ->email()
                             ->required()
@@ -86,9 +81,16 @@ class UserResource extends Resource
                             ->maxLength(255),
                         Forms\Components\TextInput::make('phone')
                             ->label('Phone Number')
+                            ->required()
                             ->tel()
-                            ->maxLength(255)
-                            ->placeholder('e.g., 09171234567'),
+                            ->maxLength(13)
+                            ->regex('/^\+?\d+$/')
+                            ->validationMessages([
+                                'regex' => 'The Contact Number must contain numbers only.',
+                            ])
+                            ->extraInputAttributes([
+                                'oninput' => "this.value = this.value.replace(/[^\d+]/g, '').replace(/(?!^)\+/g, '').slice(0, 13)",
+                            ]),
                         Forms\Components\Select::make('role')
                             ->options([
                                 User::ROLE_ADMIN => 'Admin',
@@ -96,7 +98,6 @@ class UserResource extends Resource
                                 User::ROLE_REGIONAL_DIRECTOR => 'Regional Director',
                                 User::ROLE_DIVISION_CHIEF => 'Division Chief',
                                 User::ROLE_SUPPLY_OFFICER => 'Supply Officer',
-                                User::ROLE_PROPERTY_CUSTODIAN => 'Property Custodian',
                             ])
                             ->required()
                             ->default(User::ROLE_STAFF)
@@ -112,6 +113,13 @@ class UserResource extends Resource
                                 User::ROLE_STAFF,
                                 User::ROLE_DIVISION_CHIEF,
                             ]))
+                            ->nullable(),
+                        Forms\Components\Select::make('position')
+                            ->label('Position')
+                            ->options(User::positionOptions())
+                            ->placeholder('Select Position')
+                            ->searchable()
+                            ->required(fn (string $context): bool => $context === 'create')
                             ->nullable(),
                         Forms\Components\TextInput::make('password')
                             ->password()
@@ -143,11 +151,6 @@ class UserResource extends Resource
                 Tables\Columns\TextColumn::make('name')
                     ->searchable()
                     ->sortable(),
-                Tables\Columns\TextColumn::make('username')
-                    ->label('Username')
-                    ->searchable()
-                    ->toggleable(isToggledHiddenByDefault: true)
-                    ->sortable(),
                 Tables\Columns\TextColumn::make('email')
                     ->searchable()
                     ->sortable(),
@@ -162,7 +165,6 @@ class UserResource extends Resource
                         User::ROLE_REGIONAL_DIRECTOR => 'primary',
                         User::ROLE_DIVISION_CHIEF => 'info',
                         User::ROLE_SUPPLY_OFFICER => 'success',
-                        User::ROLE_PROPERTY_CUSTODIAN => 'gray',
                         default => 'gray',
                     })
                     ->formatStateUsing(fn (string $state): string => User::getRoleLabel($state))
@@ -171,6 +173,11 @@ class UserResource extends Resource
                     ->label('Division')
                     ->badge()
                     ->color('primary')
+                    ->toggleable(isToggledHiddenByDefault: true)
+                    ->sortable(),
+                Tables\Columns\TextColumn::make('position')
+                    ->label('Position')
+                    ->searchable()
                     ->toggleable(isToggledHiddenByDefault: true)
                     ->sortable(),
                 Tables\Columns\TextColumn::make('status')
@@ -204,7 +211,6 @@ class UserResource extends Resource
                         User::ROLE_REGIONAL_DIRECTOR => 'Regional Director',
                         User::ROLE_DIVISION_CHIEF => 'Division Chief',
                         User::ROLE_SUPPLY_OFFICER => 'Supply Officer',
-                        User::ROLE_PROPERTY_CUSTODIAN => 'Property Custodian',
                     ]),
                 Tables\Filters\SelectFilter::make('status')
                     ->label('Status')

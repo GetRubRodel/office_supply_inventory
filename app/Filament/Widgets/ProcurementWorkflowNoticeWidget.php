@@ -6,6 +6,10 @@ use App\Filament\Resources\AbstractOfCanvassResource;
 use App\Filament\Resources\InspectionAcceptanceResource;
 use App\Filament\Resources\PurchaseOrderResource;
 use App\Filament\Resources\RequestForQuotationResource;
+use App\Models\AbstractOfCanvass;
+use App\Models\InspectionAcceptanceReport;
+use App\Models\PurchaseOrder;
+use App\Models\RequestForQuotation;
 use Filament\Widgets\Widget;
 
 /**
@@ -15,6 +19,14 @@ use Filament\Widgets\Widget;
 class ProcurementWorkflowNoticeWidget extends Widget
 {
     protected static string $view = 'filament.widgets.procurement-workflow-notice';
+
+    /**
+     * Render inline (server-side) instead of lazy-loading over Livewire.
+     * This is a validation notice explaining why creation is blocked — it
+     * must always be visible immediately, without depending on a
+     * JavaScript-triggered follow-up request.
+     */
+    protected static bool $isLazy = false;
 
     protected int|string|array $columnSpan = 'full';
 
@@ -34,22 +46,22 @@ class ProcurementWorkflowNoticeWidget extends Widget
             'rfq' => [
                 'eligible' => RequestForQuotationResource::hasEligibleSource(),
                 'title' => 'No approved Purchase Request available',
-                'body' => 'No approved Purchase Request is available. Please create an approved Purchase Request before creating a Request for Quotation.',
+                'body' => RequestForQuotation::NO_ELIGIBLE_PR_MESSAGE,
             ],
             'abc' => [
                 'eligible' => AbstractOfCanvassResource::hasEligibleSource(),
                 'title' => 'No Request for Quotation available',
-                'body' => 'No Request for Quotation is available. Please create a Request for Quotation before creating an Abstract of Bids and Canvass.',
+                'body' => AbstractOfCanvass::NO_ELIGIBLE_RFQ_MESSAGE,
             ],
             'po' => [
-                'eligible' => PurchaseOrderResource::hasEligibleSource(),
-                'title' => 'No Abstract of Bids and Canvass available',
-                'body' => 'No Abstract of Bids and Canvass is available. Please create an Abstract of Bids and Canvass before creating a Purchase Order.',
+                'eligible' => PurchaseOrderResource::hasEligibleBacResolution(),
+                'title' => 'No BAC Resolution available',
+                'body' => PurchaseOrder::NO_ELIGIBLE_BAC_MESSAGE,
             ],
             'iar' => [
                 'eligible' => InspectionAcceptanceResource::hasEligibleSource(),
                 'title' => 'No Purchase Order available',
-                'body' => 'No Purchase Order is available. Please create a Purchase Order before creating an Inspection and Acceptance Report.',
+                'body' => InspectionAcceptanceReport::NO_ELIGIBLE_PO_MESSAGE,
             ],
             default => ['eligible' => true, 'title' => '', 'body' => ''],
         };

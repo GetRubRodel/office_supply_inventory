@@ -4,6 +4,8 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="csrf-token" content="{{ csrf_token() }}">
+    <link rel="icon" type="image/x-icon" href="{{ asset('favicon.ico') }}">
+    <link rel="icon" type="image/png" sizes="32x32" href="{{ asset('images/logo.png') }}">
     <title>@yield('title', 'Account Access') — {{ config('app.name') }}</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -90,7 +92,11 @@
 <body>
     <div class="card">
         <div class="brand">
-            <img src="{{ asset('images/logo.png') }}" alt="System Logo" class="logo">
+            <picture>
+                <source srcset="{{ asset('images/logo.avif') }}" type="image/avif">
+                <source srcset="{{ asset('images/logo.webp') }}" type="image/webp">
+                <img src="{{ asset('images/logo.png') }}" alt="System Logo" width="48" height="48" class="logo" decoding="async">
+            </picture>
             <h1>Web-Based Supply Management and Procurement System</h1>
         </div>
 

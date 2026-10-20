@@ -12,7 +12,7 @@ class CreatePurchaseRequest extends CreateRecord
     protected ?string $maxContentWidth = '4xl';
 
     protected function getRedirectUrl(): string
-    {
-        return $this->getResource()::getUrl('view', ['record' => $this->record]);
-    }
+{
+    return static::getResource()::getUrl('index');
+}
 }

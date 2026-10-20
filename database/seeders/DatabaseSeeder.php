@@ -27,18 +27,16 @@ class DatabaseSeeder extends Seeder
 
         // Create suppliers
         $suppliers = [
-            ['National Book Store', 'Juan Dela Cruz', 'nbs@email.com', '123-4567'],
-            ['Office Warehouse', 'Maria Santos', 'ow@email.com', '234-5678'],
-            ['Paper Direct', 'Pedro Reyes', 'pd@email.com', '345-6789'],
-            ['Tech Supplies Inc.', 'Ana Gonzales', 'tsi@email.com', '456-7890'],
-            ['CleanCo Supplies', 'Jose Rizal', 'cleanco@email.com', '567-8901'],
+            ['National Book Store', '123-4567'],
+            ['Office Warehouse', '234-5678'],
+            ['Paper Direct', '345-6789'],
+            ['Tech Supplies Inc.', '456-7890'],
+            ['CleanCo Supplies', '567-8901'],
         ];
         foreach ($suppliers as $s) {
             Supplier::create([
                 'name' => $s[0],
-                'contact_person' => $s[1],
-                'email' => $s[2],
-                'phone' => $s[3],
+                'phone' => $s[1],
             ]);
         }
 

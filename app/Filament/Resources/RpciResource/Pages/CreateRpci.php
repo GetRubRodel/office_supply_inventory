@@ -51,7 +51,7 @@ class CreateRpci extends CreateRecord
             Notification::make()
                 ->danger()
                 ->title('Duplicate Report')
-                ->body("An RPCI report for '{$data['inventory_type']}' dated {$data['report_date']} already exists (Report No: {$existing->report_no}). Use the edit function to update it or choose a different date/inventory type.")
+                ->body("An RPCI Report for '{$data['inventory_type']}' dated {$data['report_date']} already exists (Report No: {$existing->report_no}). Use the edit function to update it or choose a different date/inventory type.")
                 ->send();
 
             $this->halt();

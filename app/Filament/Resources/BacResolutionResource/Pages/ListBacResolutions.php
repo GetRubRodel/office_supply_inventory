@@ -6,7 +6,7 @@ use App\Support\CurrentUser;
 
 use App\Filament\Resources\BacResolutionResource;
 use App\Filament\Resources\BacResolutionResource\Widgets\BacStatsOverviewWidget;
-use App\Filament\Resources\BacResolutionResource\Widgets\NoEligibleIarWarning;
+use App\Filament\Resources\BacResolutionResource\Widgets\NoEligibleAbcWarning;
 use Filament\Actions;
 use Filament\Resources\Pages\ListRecords;
 
@@ -19,26 +19,19 @@ class ListBacResolutions extends ListRecords
     protected function getHeaderActions(): array
     {
         return [
-            Actions\Action::make('create')
+            Actions\CreateAction::make()
                 ->label('New BAC Resolution')
-                ->icon('heroicon-o-plus')
-                ->color('primary')
-                // Hidden when no eligible IAR exists — a BAC Resolution can
-                // only be created from an unconverted Inspection and
-                // Acceptance Report (the warning banner explains why).
-                ->visible(fn (): bool => CurrentUser::get()?->canManageLegal()
-                    && BacResolutionResource::hasEligibleIar())
-                ->action(fn () => $this->redirect(
-                    BacResolutionResource::getUrl('create')
-                )),
+                ->visible(fn (): bool => CurrentUser::get()?->canManageProcurement()
+                    && CurrentUser::get()?->hasPermissionTo('bac_resolutions.create')
+                    && BacResolutionResource::hasEligibleSource()),
         ];
     }
 
     protected function getHeaderWidgets(): array
     {
         return [
+            NoEligibleAbcWarning::class,
             BacStatsOverviewWidget::class,
-            NoEligibleIarWarning::class,
         ];
     }
 }

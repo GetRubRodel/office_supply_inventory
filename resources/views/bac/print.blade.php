@@ -11,7 +11,7 @@
 
         body {
             font-family: Arial, sans-serif;
-            font-size: 10pt;
+            font-size: 11pt;
             line-height: 1.5;
             color: #000;
             margin: 0;
@@ -41,12 +41,19 @@
             margin-top: 14px;
             text-transform: uppercase;
         }
-        .header .title {
+        .body-text .title-block {
+            margin: 0 0 10px 0;
+            text-indent: 0;
+            text-align: center;
+            /* Regular weight — the title and the Division inserted into its
+               blank must not be bold. */
+            font-weight: normal;
             font-size: 10pt;
-            font-weight: bold;
-            margin-top: 12px;
-            font-style: italic;
-            text-transform: uppercase;
+        }
+        .body-text .title-spacer {
+            margin: 0;
+            text-indent: 0;
+            font-weight: normal;
         }
 
         .hr-light {
@@ -74,6 +81,21 @@
         }
         .body-text .whereas::before {
             content: "";
+        }
+        .body-text .item {
+            margin: 8px 0 8px 30px;
+            text-indent: -30px;
+        }
+        /* The closing statement is two paragraphs separated by a blank line:
+           "SO RESOLVED." then "Done this <date>, City of Koronadal,
+           Philippines." pre-line preserves that blank line, which would
+           otherwise collapse in HTML. */
+        .body-text .closing {
+            margin-top: 10px;
+            text-indent: 0;
+            text-align: left;
+            white-space: pre-line;
+            font-weight: normal;
         }
         .body-text .resolved-clause {
             margin: 8px 0 8px 20px;
@@ -127,24 +149,28 @@
             font-size: 9pt;
             margin-top: 2px;
         }
-
-        .dateline {
-            font-size: 10pt;
-            margin: 16px 0;
-            text-align: left;
-        }
     </style>
 </head>
+@php
+    $logoPath = public_path('images/logo.png');
+    // Canonical resolution blocks with the Division, Budget Amount and the
+    // date selected on the DateTimePicker already substituted into every
+    // blank. Shared with the form/view preview so the printed (and downloaded
+    // PDF) wording always matches the form exactly — including the
+    // "Done this ..., City of Koronadal, Philippines." closing line.
+    $blocks = $bac->getResolutionBlocks();
+@endphp
 <body>
 
     {{-- ═══ HEADER ═══ --}}
     <div class="header">
-        @php
-            $logoPath = public_path('images/logo.png');
-        @endphp
         @if(file_exists($logoPath))
             <div style="text-align:center;margin-bottom:8px;">
-                <img src="{{ asset('images/logo.png') }}" alt="System Logo" style="height:70px;width:auto;">
+                <picture>
+                    <source srcset="{{ asset('images/logo.avif') }}" type="image/avif">
+                    <source srcset="{{ asset('images/logo.webp') }}" type="image/webp">
+                    <img src="{{ asset('images/logo.png') }}" alt="System Logo" width="70" height="70" style="height:70px;width:auto;" decoding="async">
+                </picture>
             </div>
         @endif
         <h1>BIDS AND AWARDS COMMITTEE</h1>
@@ -153,43 +179,28 @@
         <div class="resolution-no">
             {{ $bac->getDisplayResolutionNo() }}
         </div>
-
-        @if($bac->title)
-            <div class="hr-light"></div>
-            <div class="title">{{ $bac->title }}</div>
-        @endif
     </div>
 
     <hr class="hr-light">
 
     {{-- ═══ BODY TEXT ═══ --}}
     <div class="body-text">
-        @if($bac->preamble)
-            @foreach(explode("\n\n", $bac->preamble) as $paragraph)
-                <p>{{ $paragraph }}</p>
-            @endforeach
-        @endif
-
-        @if($bac->operative_part)
-            <p>{{ $bac->operative_part }}</p>
-        @endif
-
-        @if($bac->further_resolved)
-            <p>{{ $bac->further_resolved }}</p>
-        @endif
-
-        @if($bac->closing)
-            <p>{{ $bac->closing }}</p>
-        @endif
+        @foreach ($blocks as $block)
+            @if ($block['type'] === 'title')
+                <p class="title-block">{{ $block['text'] }}</p>
+                {{-- One blank line between the title and the WHEREAS clauses. --}}
+                <p class="title-spacer" aria-hidden="true">&nbsp;</p>
+            @elseif ($block['type'] === 'whereas')
+                <p class="whereas">{{ $block['text'] }}</p>
+            @elseif ($block['type'] === 'item')
+                <p class="item">{{ $block['text'] }}</p>
+            @elseif ($block['type'] === 'closing')
+                <p class="closing">{{ $block['text'] }}</p>
+            @else
+                <p>{{ $block['text'] }}</p>
+            @endif
+        @endforeach
     </div>
-
-    {{-- ═══ DATELINE ═══ --}}
-    @if($bac->date || $bac->place)
-        <div class="dateline">
-            Done this {{ $bac->date ? \Carbon\Carbon::parse($bac->date)->format('jS \d\a\y \o\f F Y') : '________________' }},
-            {{ $bac->place ?? '________________' }}.
-        </div>
-    @endif
 
     {{-- ═══ BAC MEMBERS ═══ --}}
     <div class="signatures">
@@ -197,27 +208,27 @@
             <tr>
                 <td style="width:100%;" colspan="5">
                     <div class="name">{{ $bac->chairperson_name ?: '________________________' }}</div>
-                    <div class="designation">{{ $bac->chairperson_designation ?: 'Chairperson' }}</div>
+                    <div class="designation">{{ $bac->chairperson_designation ?: '________________________' }}</div>
                 </td>
             </tr>
             <tr>
                 <td style="width:33%;">
                     <div class="name">{{ $bac->vice_chairperson_name ?: '________________________' }}</div>
-                    <div class="designation">{{ $bac->vice_chairperson_designation ?: 'Vice-Chairperson' }}</div>
+                    <div class="designation">{{ $bac->vice_chairperson_designation ?: '________________________' }}</div>
                 </td>
                 <td style="width:34%;">
                     <div class="name">{{ $bac->member1_name ?: '________________________' }}</div>
-                    <div class="designation">{{ $bac->member1_designation ?: 'Member' }}</div>
+                    <div class="designation">{{ $bac->member1_designation ?: '________________________' }}</div>
                 </td>
                 <td style="width:33%;">
                     <div class="name">{{ $bac->member2_name ?: '________________________' }}</div>
-                    <div class="designation">{{ $bac->member2_designation ?: 'Member' }}</div>
+                    <div class="designation">{{ $bac->member2_designation ?: '________________________' }}</div>
                 </td>
             </tr>
             <tr>
                 <td style="width:50%;">
                     <div class="name">{{ $bac->member3_name ?: '________________________' }}</div>
-                    <div class="designation">{{ $bac->member3_designation ?: 'Member' }}</div>
+                    <div class="designation">{{ $bac->member3_designation ?: '________________________' }}</div>
                 </td>
                 <td style="width:50%;"></td>
             </tr>

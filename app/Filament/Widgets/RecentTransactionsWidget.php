@@ -8,6 +8,7 @@ use App\Models\RequisitionItem;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Filament\Widgets\TableWidget as BaseWidget;
+use Illuminate\Database\Eloquent\Builder;
 
 class RecentTransactionsWidget extends BaseWidget
 {
@@ -23,14 +24,17 @@ class RecentTransactionsWidget extends BaseWidget
     public function table(Table $table): Table
     {
         return $table
-            ->query(function (): \Illuminate\Database\Eloquent\Builder {
+            ->query(function (): Builder {
                 $user = CurrentUser::get();
 
-                $query = RequisitionItem::with(['supply', 'requisition'])
+                // Most roles with supplies.view see the full list of recent
+                // transactions. Staff (own-records-only) see only the recent
+                // transactions of the RIS requests they submitted themselves,
+                // mirroring the scoping in DashboardStatsOverviewWidget.
+                return RequisitionItem::with(['supply', 'requisition'])
                     ->whereHas('requisition', function ($q) use ($user) {
                         $q->whereIn('status', ['issued', 'pending_receipt', 'received']);
 
-                        // Staff (own-records-only) see only their own RIS transactions.
                         if ($user?->isOwnRecordsOnly()) {
                             $q->where('user_id', $user->id);
                         }
@@ -38,8 +42,6 @@ class RecentTransactionsWidget extends BaseWidget
                     ->where('quantity_issued', '>', 0)
                     ->latest('id')
                     ->limit(10);
-
-                return $query;
             })
             ->columns([
                 Tables\Columns\TextColumn::make('requisition.ris_no')

@@ -69,14 +69,20 @@ class EditAbstractOfCanvass extends EditRecord
             Actions\Action::make('print')
                 ->label('Print ABC')
                 ->icon('heroicon-o-printer')
+                ->visible(fn (): bool => ! CurrentUser::get()?->isRegionalDirector() && ! CurrentUser::get()?->isStaff() && ! CurrentUser::get()?->isDivisionChief())
                 ->url(fn () => route('abc.print', $this->record))
                 ->openUrlInNewTab(),
-            Actions\DeleteAction::make(),
+            Actions\DeleteAction::make()
+                ->visible(fn (): bool => ! CurrentUser::get()?->isSupplyOfficer()),
         ];
     }
 
     protected function mutateFormDataBeforeSave(array $data): array
     {
+        // Guarantee sequential item numbers (1, 2, 3, …) regardless of the
+        // UI state when the form is submitted.
+        $data['items'] = AbstractOfCanvassService::renumberItems($data['items'] ?? []);
+
         $totals = AbstractOfCanvassService::supplierTotalsFromItems($data['items'] ?? []);
         $winnerIndex = AbstractOfCanvassService::lowestTotalIndex($totals);
         $tiedIndexes = AbstractOfCanvassService::tiedLowestIndexes($totals);

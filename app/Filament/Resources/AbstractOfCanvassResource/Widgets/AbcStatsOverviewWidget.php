@@ -23,16 +23,21 @@ class AbcStatsOverviewWidget extends BaseWidget
     {
         $totalAbstracts = AbstractOfCanvass::count();
 
-        $pendingEvaluation = AbstractOfCanvass::where('status', 'draft')
-            ->whereNull('approved_by_name')
+        // Approval details are sourced from the originating RFQ, so the ABC's
+        // own approved_by_* columns are never populated. Pending/completed are
+        // derived from the ABC lifecycle instead: draft ABCs still awaiting
+        // evaluation vs. ABCs with a winning supplier that have been converted
+        // into a BAC Resolution.
+        $pendingEvaluation = AbstractOfCanvass::where('status', AbstractOfCanvass::STATUS_DRAFT)
+            ->whereDoesntHave('bacResolutions')
             ->count();
 
-        $completedAbstracts = AbstractOfCanvass::whereNotNull('approved_by_name')
-            ->whereNotNull('recommendation')
+        $completedAbstracts = AbstractOfCanvass::whereNotNull('recommendation')
+            ->whereHas('bacResolutions')
             ->count();
 
-        $winningSuppliers = AbstractOfCanvass::whereNotNull('approved_by_name')
-            ->whereNotNull('recommendation')
+        $winningSuppliers = AbstractOfCanvass::whereNotNull('recommendation')
+            ->whereHas('bacResolutions')
             ->distinct('recommendation')
             ->count('recommendation');
 

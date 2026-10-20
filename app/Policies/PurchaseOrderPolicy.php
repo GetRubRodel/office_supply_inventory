@@ -27,11 +27,21 @@ class PurchaseOrderPolicy
 
     public function update(User $user, PurchaseOrder $purchaseOrder): bool
     {
+        // Division Chief may not update PO records.
+        if ($user->isDivisionChief()) {
+            return false;
+        }
+
         return $user->hasPermissionTo('purchase_orders.update');
     }
 
     public function delete(User $user, PurchaseOrder $purchaseOrder): bool
     {
+        // Supply Officer may not delete PO records.
+        if ($user->isSupplyOfficer()) {
+            return false;
+        }
+
         return $user->hasPermissionTo('purchase_orders.delete');
     }
 }

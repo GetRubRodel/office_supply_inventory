@@ -21,7 +21,7 @@ class ListPurchaseOrders extends ListRecords
         return [
             Actions\CreateAction::make()
                 ->visible(fn (): bool => CurrentUser::get()?->canManageProcurement()
-                    && PurchaseOrderResource::hasEligibleSource()),
+                    && PurchaseOrderResource::hasEligibleBacResolution()),
         ];
     }
 

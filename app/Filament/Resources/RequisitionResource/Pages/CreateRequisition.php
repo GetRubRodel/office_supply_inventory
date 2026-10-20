@@ -47,7 +47,7 @@ class CreateRequisition extends CreateRecord
 
             $qty = (int) ($item['quantity_requested'] ?? 0);
             if ($qty > $supply->current_stock) {
-                $errors["items.{$index}.quantity_requested"] = "Insufficient stock for \"{$supply->name}\". Requested: {$qty}, Available: {$supply->current_stock} {$supply->unit}.";
+                $errors["items.{$index}.quantity_requested"] = 'Insufficient stock. The requested quantity cannot exceed the available stock.';
             }
         }
 

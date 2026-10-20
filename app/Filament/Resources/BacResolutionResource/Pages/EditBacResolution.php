@@ -67,9 +67,11 @@ class EditBacResolution extends EditRecord
             Actions\Action::make('print')
                 ->label('Print Resolution')
                 ->icon('heroicon-o-printer')
+                ->visible(fn (): bool => ! CurrentUser::get()?->isRegionalDirector() && ! CurrentUser::get()?->isStaff() && ! CurrentUser::get()?->isDivisionChief())
                 ->url(fn () => route('bac.print', $this->record))
                 ->openUrlInNewTab(),
-            Actions\DeleteAction::make(),
+            Actions\DeleteAction::make()
+                ->visible(fn (): bool => ! CurrentUser::get()?->isSupplyOfficer()),
         ];
     }
 }

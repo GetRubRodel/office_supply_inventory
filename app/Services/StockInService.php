@@ -15,7 +15,7 @@ class StockInService
     /**
      * Process automatic stock-in for an approved IAR.
      *
-     * For each accepted IAR item (quantity_accepted > 0):
+     * For each received IAR item (quantity > 0):
      *  - If the item already has a supply_id, use that existing Supply record.
      *  - Otherwise, search for an existing Supply with a matching item description (name).
      *  - If a match is found, the existing Supply is reused: quantity is added and MAC
@@ -60,23 +60,33 @@ class StockInService
 
         $iar->loadMissing('items');
 
-        $acceptedItems = $iar->items->where('quantity_accepted', '>', 0);
-        if ($acceptedItems->isEmpty()) {
+        // Recover missing item data (description, unit, quantity, unit cost)
+        // from the source Purchase Order before validating. IAR items are
+        // snapshots of PO items, so any field that was never persisted can be
+        // safely restored from the linked PO. This prevents Stock In from
+        // failing on records whose description was not saved correctly.
+        $this->hydrateItemsFromPo($iar);
+
+        $receivedItems = $iar->items->where('quantity', '>', 0);
+        if ($receivedItems->isEmpty()) {
             throw ValidationException::withMessages([
-                'items' => 'At least one IAR item must have a quantity accepted greater than 0.',
+                'items' => 'At least one IAR item must have a quantity received greater than 0.',
             ]);
         }
 
         // Validate: description
-        $missingDescription = $acceptedItems->first(fn ($item) => empty(trim($item->description ?? '')));
+        $missingDescription = $receivedItems->first(fn ($item) => empty(trim($item->description ?? '')));
         if ($missingDescription) {
+            $identifier = $missingDescription->stock_no
+                ? "row {$missingDescription->id} (Stock No. {$missingDescription->stock_no})"
+                : "row {$missingDescription->id}";
             throw ValidationException::withMessages([
-                'items' => "Item row {$missingDescription->id} is missing a description. Please fill in the description for every accepted item.",
+                'items' => "Item {$identifier} is missing a description and could not be recovered from the source Purchase Order. Please edit the IAR and fill in the description for every received item.",
             ]);
         }
 
         // Validate: unit_cost > 0
-        $missingCost = $acceptedItems->first(fn ($item) => empty($item->unit_cost) || (float) $item->unit_cost <= 0);
+        $missingCost = $receivedItems->first(fn ($item) => empty($item->unit_cost) || (float) $item->unit_cost <= 0);
         if ($missingCost) {
             throw ValidationException::withMessages([
                 'items' => "Item \"{$missingCost->description}\" has no unit cost. Please set a unit cost greater than zero before stocking in.",
@@ -84,7 +94,7 @@ class StockInService
         }
 
         // Validate: every item that will create a NEW supply must have a category_id.
-        $missingCategory = $acceptedItems->first(function ($item) {
+        $missingCategory = $receivedItems->first(function ($item) {
             if (!empty($item->supply_id)) {
                 return false;
             }
@@ -105,9 +115,9 @@ class StockInService
         $createdSupplies = [];
         $updatedSupplies = [];
 
-        DB::transaction(function () use ($iar, $acceptedItems, &$createdRecords, &$createdSupplies, &$updatedSupplies) {
-            foreach ($acceptedItems as $item) {
-                $quantityAccepted = (int) $item->quantity_accepted;
+        DB::transaction(function () use ($iar, $receivedItems, &$createdRecords, &$createdSupplies, &$updatedSupplies) {
+            foreach ($receivedItems as $item) {
+                $quantityReceived = (int) $item->quantity;
                 $unitCost         = (float) ($item->unit_cost ?? 0);
 
                 $supply = $this->findOrCreateSupply($item);
@@ -144,9 +154,9 @@ class StockInService
                 $record->reference_number = StockInRecord::generateReferenceNumber();
                 $record->iar_id            = $iar->id;
                 $record->supply_id         = $supply->id;
-                $record->quantity_received = $quantityAccepted;
+                $record->quantity_received = $quantityReceived;
                 $record->unit_cost         = $unitCost;
-                $record->total_cost        = $quantityAccepted * $unitCost;
+                $record->total_cost        = $quantityReceived * $unitCost;
                 $record->supplier          = $iar->supplier_name;
                 $record->date_received     = $iar->date ?? now();
                 $record->remarks           = "Auto stock-in from IAR {$iar->iar_no}";
@@ -154,7 +164,7 @@ class StockInService
 
                 // Recalculate MAC and update unit_cost / total_cost on the Supply
                 $supply->receiveStock(
-                    quantity:        $quantityAccepted,
+                    quantity:        $quantityReceived,
                     unitCost:        $unitCost,
                     referenceNumber: $iar->iar_no,
                     dateReceived:    $iar->date ?? now()
@@ -183,6 +193,117 @@ class StockInService
             'message' => implode('. ', $parts) . '.',
             'records' => $createdRecords,
         ];
+    }
+
+    /**
+     * Restore missing IAR item data from the source Purchase Order.
+     *
+     * IAR items are created as snapshots of the PO items. When a record was
+     * saved without its description, unit, quantity, unit cost, catalog link,
+     * or category (e.g. legacy records or form submissions that did not persist
+     * those fields), the missing values are recovered from the linked PO so
+     * Stock In can proceed.
+     *
+     * Matching strategy:
+     *  1. By stock number, when the IAR item already carries one.
+     *  2. By position — IAR items mirror PO items in order, so the Nth IAR
+     *     item corresponds to the Nth PO item.
+     *
+     * Only genuinely missing fields are overwritten; existing values are kept.
+     * Hydrated values are persisted back to the IAR item so the record is
+     * repaired for downstream reports and future stock-in attempts.
+     *
+     * @param InspectionAcceptanceReport $iar
+     */
+    protected function hydrateItemsFromPo(InspectionAcceptanceReport $iar): void
+    {
+        $po = $iar->po()->with('items')->first();
+
+        if (! $po || $po->items->isEmpty()) {
+            return;
+        }
+
+        $poItems = $po->items->sortBy('id')->values();
+        $iarItems = $iar->items->sortBy('id')->values();
+
+        foreach ($iarItems as $index => $item) {
+            $poItem = $this->matchPoItem($item, $poItems, $index);
+
+            if (! $poItem) {
+                continue;
+            }
+
+            $hasDescription = ! empty(trim($item->description ?? ''));
+            $isBroken = ! $hasDescription;
+
+            $needsSave = false;
+
+            // Description — the critical field for Stock In.
+            if (! $hasDescription && ! empty(trim($poItem->description ?? ''))) {
+                $item->description = $poItem->description;
+                $needsSave = true;
+            }
+
+            // Unit.
+            if (empty($item->unit) && ! empty($poItem->unit)) {
+                $item->unit = $poItem->unit;
+                $needsSave = true;
+            }
+
+            // Stock number.
+            if (empty($item->stock_no) && ! empty($poItem->stock_no)) {
+                $item->stock_no = $poItem->stock_no;
+                $needsSave = true;
+            }
+
+            // Quantity — recovered when the record is broken (never properly
+            // saved) or when the stored quantity is invalid.
+            if ($isBroken || (int) $item->quantity <= 0) {
+                if ((int) $poItem->quantity > 0) {
+                    $item->quantity = (int) $poItem->quantity;
+                    $needsSave = true;
+                }
+            }
+
+            // Unit cost.
+            if (empty($item->unit_cost) && ! empty($poItem->unit_cost)) {
+                $item->unit_cost = $poItem->unit_cost;
+                $needsSave = true;
+            }
+
+            // Category, for PO items that carry one.
+            if (empty($item->category_id) && ! empty($poItem->category_id)) {
+                $item->category_id = $poItem->category_id;
+                $needsSave = true;
+            }
+
+            if ($needsSave) {
+                $item->save();
+            }
+        }
+    }
+
+    /**
+     * Match an IAR item to its source PO item.
+     *
+     * @param \App\Models\IarItem $item
+     * @param \Illuminate\Support\Collection $poItems
+     * @param int $index Position of the IAR item within its IAR.
+     * @return \App\Models\PoItem|null
+     */
+    protected function matchPoItem(\App\Models\IarItem $item, $poItems, int $index): ?\App\Models\PoItem
+    {
+        // Prefer an explicit stock-number match when the IAR item has one.
+        if (! empty($item->stock_no)) {
+            $match = $poItems->first(fn ($poItem) => $poItem->stock_no === $item->stock_no);
+
+            if ($match) {
+                return $match;
+            }
+        }
+
+        // Fallback: IAR items mirror PO items in order.
+        return $poItems->get($index);
     }
 
     /**

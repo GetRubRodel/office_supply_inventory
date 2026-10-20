@@ -20,29 +20,27 @@ class ViewPurchaseRequest extends ViewRecord
     {
         parent::mount($record);
 
-        $user = CurrentUser::get();
-        if ($user && $user->isOwnRecordsOnly() && $this->record->user_id !== $user->id) {
-            abort(403, 'You are not authorized to view this Purchase Request.');
-        }
+        // Any role holding purchase_requests.view may open any purchase
+        // request — Staff track the full pipeline read-only. Write access
+        // remains gated by the policy and the per-action visibility checks.
     }
 
     protected function getHeaderActions(): array
     {
         return [
-            // Submit for Review (not for Division Chief, Regional Director, or Property Custodian)
+            // Submit for Review (original requester or Administrator only)
             Actions\Action::make('submit')
                 ->label('Submit for Review')
                 ->icon('heroicon-o-arrow-up-circle')
                 ->color('warning')
                 ->visible(fn (): bool =>
-                    ! CurrentUser::get()?->isRegionalDirector()
-                    && ! CurrentUser::get()?->isPropertyCustodian()
-                    && ! CurrentUser::get()?->isDivisionChief()
+                    CurrentUser::get()?->can('submit', $this->record)
                     && $this->record->canTransitionTo(PurchaseRequest::STATUS_FOR_REVIEW))
                 ->requiresConfirmation()
                 ->modalHeading('Submit Purchase Request')
                 ->modalDescription('Are you sure you want to submit this PR for review? It will no longer be editable.')
                 ->action(function () {
+                    abort_unless(CurrentUser::get()?->can('submit', $this->record), 403);
                     $this->record->transitionTo(PurchaseRequest::STATUS_FOR_REVIEW);
                     Notification::make()
                         ->success()
@@ -84,32 +82,42 @@ class ViewPurchaseRequest extends ViewRecord
                     && $this->record->canTransitionTo(PurchaseRequest::STATUS_REJECTED))
                 ->requiresConfirmation()
                 ->modalHeading('Reject Purchase Request')
-                ->modalDescription('Are you sure you want to reject this PR? It will be sent back to draft.')
-                ->action(function () {
+                ->modalDescription('Please provide a reason for rejecting this PR. The requester will be notified.')
+                ->form([
+                    \Filament\Forms\Components\Textarea::make('rejection_reason')
+                        ->label('Rejection Remarks / Reason')
+                        ->required()
+                        ->rows(4)
+                        ->placeholder('Explain why this purchase request is being rejected...')
+                        ->helperText('This will be shown to the requester.'),
+                ])
+                ->action(function (array $data) {
                     abort_unless(CurrentUser::get()?->isAdmin() || CurrentUser::get()?->isRegionalDirector(), 403);
-                    $this->record->transitionTo(PurchaseRequest::STATUS_REJECTED);
+                    $this->record->transitionTo(PurchaseRequest::STATUS_REJECTED, $data['rejection_reason']);
+
                     Notification::make()
                         ->success()
                         ->title('PR Rejected')
                         ->body("PR {$this->record->pr_no} has been rejected.")
                         ->send();
-                    $this->refreshFormData(['status']);
+                    $this->refreshFormData(['status', 'rejection_reason', 'rejected_by_name', 'rejected_by_designation', 'rejected_at']);
                 }),
 
-            // Revise (rejected → draft) — not for Division Chief, Regional Director, or Property Custodian
+            // Revise (rejected → draft) — roles with update permission only
             Actions\Action::make('revise')
                 ->label('Revise')
                 ->icon('heroicon-o-pencil-square')
                 ->color('gray')
                 ->visible(fn (): bool =>
-                    ! CurrentUser::get()?->isRegionalDirector()
-                    && ! CurrentUser::get()?->isPropertyCustodian()
+                    CurrentUser::get()?->hasPermissionTo('purchase_requests.update')
+                    && ! CurrentUser::get()?->isRegionalDirector()
                     && ! CurrentUser::get()?->isDivisionChief()
                     && $this->record->canTransitionTo(PurchaseRequest::STATUS_DRAFT))
                 ->requiresConfirmation()
                 ->modalHeading('Revise Purchase Request')
                 ->modalDescription('Re-open this PR for editing as a draft.')
                 ->action(function () {
+                    abort_unless(CurrentUser::get()?->hasPermissionTo('purchase_requests.update'), 403);
                     $this->record->transitionTo(PurchaseRequest::STATUS_DRAFT);
                     Notification::make()
                         ->info()
@@ -144,15 +152,18 @@ class ViewPurchaseRequest extends ViewRecord
             Actions\Action::make('print')
                 ->label('Print PR')
                 ->icon('heroicon-o-printer')
+                ->visible(fn (): bool => ! CurrentUser::get()?->isRegionalDirector() && ! CurrentUser::get()?->isStaff() && ! CurrentUser::get()?->isDivisionChief())
                 ->url(fn () => route('pr.print', $this->record))
                 ->openUrlInNewTab(),
             Actions\EditAction::make()
                 ->visible(fn (): bool =>
-                    ! CurrentUser::get()?->isRegionalDirector()
-                    && ! CurrentUser::get()?->isPropertyCustodian()
+                    CurrentUser::get()?->hasPermissionTo('purchase_requests.update')
+                    && ! CurrentUser::get()?->isRegionalDirector()
                     && ! CurrentUser::get()?->isDivisionChief()
                     && ! CurrentUser::get()?->isSupplyOfficer()
                     && (CurrentUser::get()?->canManageProcurement() || $this->record->status === PurchaseRequest::STATUS_DRAFT)),
+            Actions\DeleteAction::make()
+                ->visible(fn (): bool => CurrentUser::get()?->isAdmin()),
         ];
     }
 }

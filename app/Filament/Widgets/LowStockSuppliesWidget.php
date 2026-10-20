@@ -25,7 +25,8 @@ class LowStockSuppliesWidget extends BaseWidget
     {
         return $table
             ->query(
-                Supply::whereColumn('current_stock', '<=', 'reorder_level')
+                Supply::with('category')
+                    ->whereColumn('current_stock', '<=', 'reorder_level')
                     ->orderBy('current_stock')
                     ->limit(10)
             )

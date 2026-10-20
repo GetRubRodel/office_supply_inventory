@@ -33,6 +33,44 @@ class AbstractOfCanvassService
     }
 
     /**
+     * Compute total quotation per supplier, but only for suppliers with a
+     * complete bid — a price on every item. Suppliers missing any price are
+     * excluded (null) so a partial bid can never win by having an
+     * artificially low total.
+     *
+     * @return array{0: ?float, 1: ?float, 2: ?float}
+     */
+    public static function completeBidTotals(AbstractOfCanvass $abc): array
+    {
+        $totals = [0.0, 0.0, 0.0];
+        $complete = [true, true, true];
+
+        foreach ($abc->items->all() as $item) {
+            $quantity = max(0, (float) self::valueOf($item, 'quantity', 0));
+
+            for ($i = 0; $i < self::SUPPLIER_COLUMN_COUNT; $i++) {
+                $price = self::valueOf($item, 'supplier'.($i + 1).'_price', null);
+
+                if ($price === null || $price === '') {
+                    // Missing price → the supplier's bid is incomplete.
+                    $complete[$i] = false;
+                    continue;
+                }
+
+                if ($complete[$i]) {
+                    $totals[$i] += round($quantity * (float) $price, 2);
+                }
+            }
+        }
+
+        return [
+            $complete[0] ? $totals[0] : null,
+            $complete[1] ? $totals[1] : null,
+            $complete[2] ? $totals[2] : null,
+        ];
+    }
+
+    /**
      * Compute total quotation per supplier from raw Filament repeater data.
      *
      * @param  array<int, array<string, mixed>>  $items
@@ -41,6 +79,25 @@ class AbstractOfCanvassService
     public static function supplierTotalsFromItems(array $items): array
     {
         return self::calculateTotals($items);
+    }
+
+    /**
+     * Re-index item rows with sequential item numbers (1, 2, 3, …) based on
+     * their current order. Array keys are preserved so Filament's
+     * relationship sync can still match existing rows during an update.
+     *
+     * @param  array<int, array<string, mixed>>  $items
+     * @return array<int, array<string, mixed>>
+     */
+    public static function renumberItems(array $items): array
+    {
+        $index = 1;
+
+        foreach ($items as $key => $item) {
+            $items[$key]['item_number'] = $index++;
+        }
+
+        return $items;
     }
 
     /**

@@ -14,16 +14,12 @@ class IarItem extends Model
         'unit',
         'description',
         'quantity',
-        'quantity_accepted',
-        'quantity_rejected',
         'unit_cost',
         'category_id',
     ];
 
     protected $casts = [
         'quantity' => 'integer',
-        'quantity_accepted' => 'integer',
-        'quantity_rejected' => 'integer',
         'unit_cost' => 'decimal:2',
     ];
 

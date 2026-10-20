@@ -116,7 +116,9 @@ class CreateSupply extends CreateRecord
                 }
             }
 
-            // Create new supply item
+            // Create new supply item (stock starts at zero; the initial entry
+            // below runs through the MAC pipeline so current_stock, unit_cost
+            // (MAC), average_unit_cost, and total_cost stay consistent).
             $supply = new Supply();
             $supply->stock_no = $stockNo ?? Supply::generateStockNo();
             $supply->category_id = $data['category_id'];
@@ -125,22 +127,32 @@ class CreateSupply extends CreateRecord
             $supply->description = $data['description'] ?? null;
             $supply->unit = $data['unit'] ?? null;
             $supply->reorder_level = (int) ($data['reorder_level'] ?? 0);
-            $supply->current_stock = (int) ($data['current_stock'] ?? 0);
+            $supply->current_stock = 0;
             $supply->unit_price = (float) ($data['unit_price'] ?? 0);
-            $supply->unit_cost = (float) ($data['current_stock'] ?? 0) > 0
-                ? (float) ($data['unit_price'] ?? 0)
-                : 0;
-            $supply->average_unit_cost = $supply->unit_cost; // kept in sync for DB backward compatibility
+            $supply->unit_cost = 0;
+            $supply->average_unit_cost = 0; // kept in sync for DB backward compatibility
             $supply->status = $data['status'] ?? 'active';
             $supply->reference_number = $data['reference_number'] ?? null;
             $supply->save();
 
             // Record stock-in for new supply if quantity > 0
-            if ($supply->current_stock > 0) {
+            $quantity = (int) ($data['current_stock'] ?? 0);
+            $unitCost = (float) ($data['unit_cost'] ?? $data['unit_price'] ?? 0);
+
+            if ($quantity > 0) {
+                // Sets current_stock, MAC (unit_cost/average_unit_cost),
+                // total_cost, and last-received tracking in one pass.
+                $supply->receiveStock(
+                    quantity: $quantity,
+                    unitCost: $unitCost,
+                    referenceNumber: $data['reference_number'] ?? null,
+                    dateReceived: now()->toDateString()
+                );
+
                 $stockIn = new StockInRecord();
                 $stockIn->reference_number = StockInRecord::generateReferenceNumber();
                 $stockIn->supply_id = $supply->id;
-                $stockIn->quantity_received = $supply->current_stock;
+                $stockIn->quantity_received = $quantity;
                 $stockIn->unit_cost = $supply->unit_cost;
                 $stockIn->supplier = $supply->supplier?->name ?? null;
                 $stockIn->date_received = now()->toDateString();

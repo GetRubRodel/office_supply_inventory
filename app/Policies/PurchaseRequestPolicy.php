@@ -17,11 +17,8 @@ class PurchaseRequestPolicy
 
     public function view(User $user, PurchaseRequest $purchaseRequest): bool
     {
-        // Staff (own-records-only) may only view their own purchase requests.
-        if ($user->isOwnRecordsOnly() && $purchaseRequest->user_id !== $user->id) {
-            return false;
-        }
-
+        // Any role holding purchase_requests.view may open any purchase
+        // request (Staff track the full procurement pipeline read-only).
         return $user->hasPermissionTo('purchase_requests.view');
     }
 
@@ -32,16 +29,43 @@ class PurchaseRequestPolicy
 
     public function update(User $user, PurchaseRequest $purchaseRequest): bool
     {
-        return $user->hasPermissionTo('purchase_requests.update');
+        if (! $user->hasPermissionTo('purchase_requests.update')) {
+            return false;
+        }
+
+        // Staff may only update their own purchase requests.
+        if ($user->isOwnRecordsOnly()) {
+            return $purchaseRequest->user_id === $user->id;
+        }
+
+        return true;
     }
 
     public function delete(User $user, PurchaseRequest $purchaseRequest): bool
     {
-        return $user->hasPermissionTo('purchase_requests.delete');
+        if (! $user->hasPermissionTo('purchase_requests.delete')) {
+            return false;
+        }
+
+        // Staff may only delete their own purchase requests.
+        if ($user->isOwnRecordsOnly()) {
+            return $purchaseRequest->user_id === $user->id;
+        }
+
+        return true;
     }
 
     public function approve(User $user, PurchaseRequest $purchaseRequest): bool
     {
         return $user->hasPermissionTo('purchase_requests.approve');
+    }
+
+    /**
+     * Submit a Purchase Request for review — only the original requester
+     * (the user who created the PR) and the Administrator may submit.
+     */
+    public function submit(User $user, PurchaseRequest $purchaseRequest): bool
+    {
+        return $user->canSubmitPurchaseRequest($purchaseRequest);
     }
 }

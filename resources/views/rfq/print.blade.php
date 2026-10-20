@@ -7,11 +7,12 @@
         @page {
             size: A4 portrait;
             margin: 10mm 12mm;
+            width: 210mm;
         }
 
         body {
             font-family: Arial, sans-serif;
-            font-size: 9pt;
+            font-size: 11pt;
             line-height: 1.4;
             color: #000;
             margin: 0;
@@ -112,7 +113,7 @@
         }
 
         .valediction {
-            text-align: right;
+            text-align: center;
             margin-top: 30px;
             font-size: 9pt;
         }
@@ -200,7 +201,11 @@
                     $logoPath = public_path('images/logo.png');
                 @endphp
                 @if(file_exists($logoPath))
-                    <img src="{{ asset('images/logo.png') }}" alt="System Logo" style="height:70px;width:auto;">
+                    <picture>
+                        <source srcset="{{ asset('images/logo.avif') }}" type="image/avif">
+                        <source srcset="{{ asset('images/logo.webp') }}" type="image/webp">
+                        <img src="{{ asset('images/logo.png') }}" alt="System Logo" width="70" height="70" style="height:70px;width:auto;" decoding="async">
+                    </picture>
                 @else
                     <div style="width:70px;height:70px;border:2px solid #ccc;border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto;font-size:6pt;font-weight:bold;text-align:center;line-height:1.2;color:#999;">
                         LOGO
@@ -267,6 +272,13 @@
             </td>
             <td></td>
         </tr>
+        <tr>
+            <td>
+                <span class="label">TIN Number:</span>
+                {{ $rfq->tin ?? '____________________________' }}
+            </td>
+            <td></td>
+        </tr>
     </table>
 
     <br>
@@ -293,7 +305,7 @@
                     {{ $rfq->approved_by_name ?: '________________________' }}
                 </div>
                 <div class="signatory-title">
-                    {{ $rfq->approved_by_designation ?: 'Regional Director' }}
+                    {{ $rfq->approved_by_designation ?: '________________________' }}
                 </div>
             </div>
         </div>

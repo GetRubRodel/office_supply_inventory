@@ -9,6 +9,7 @@ use App\Models\Rpci;
 use App\Models\Supply;
 use App\Models\User;
 use Filament\Forms;
+use Filament\Forms\Components\Select;
 use Filament\Forms\Form;
 use Filament\Forms\Get;
 use Filament\Forms\Set;
@@ -61,9 +62,15 @@ class RpciResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-clipboard-document-list';
 
-    protected static ?string $navigationGroup = 'Reports';
+    protected static ?string $navigationGroup = 'Report Management';
 
     protected static ?int $navigationSort = 5;
+
+    protected static ?string $navigationLabel = 'RPCI Reports';
+
+    protected static ?string $modelLabel = 'RPCI Report';
+
+    protected static ?string $pluralModelLabel = 'RPCI Reports';
 
     /**
      * Merge all active supplies into the given repeater state.
@@ -215,19 +222,24 @@ class RpciResource extends Resource
                                 Forms\Components\TextInput::make('inventory_type')
                                     ->label('Inventory Type')
                                     ->default('Common-Office Supplies')
-                                    ->placeholder('Common-Office Supplies')
                                     ->required()
-                                    ->columnSpan(1),
+                                    ->columnSpan(1)
+                                    ->disabled()
+                                    ->dehydrated(true)
+                                    ->hidden(),
                                 Forms\Components\DatePicker::make('report_date')
                                     ->label('Report Date (As of)')
                                     ->required()
                                     ->default(now())
                                     ->displayFormat('F j, Y')
                                     ->columnSpan(1),
-                                Forms\Components\TextInput::make('fund_cluster')
+                                Forms\Components\Select::make('fund_cluster')
                                     ->label('Fund Cluster')
-                                    ->placeholder('01')
-                                    ->columnSpan(1)
+                                    ->options([
+                                        '01' => '01',
+                                        '02' => '02',
+                                ])
+                                    ->searchable()
                                     ->required(),
                             ]),
 
@@ -235,14 +247,14 @@ class RpciResource extends Resource
                             ->schema([
                                 Forms\Components\TextInput::make('accountable_person')
                                     ->label('Accountable Person')
-                                    ->placeholder('Full name of accountable officer')
+                                    ->placeholder('Name of the Accountable Person')
                                     ->required()
                                     ->columnSpan(1),
                                 Forms\Components\TextInput::make('accountable_position')
                                     ->label('Position / Designation')
-                                    ->placeholder('Supply Officer')
-                                    ->columnSpan(1)
-                                    ->required(),
+                                    ->placeholder('Designation')
+                                    ->required()
+                                    ->columnSpan(1),
                                 Forms\Components\DatePicker::make('accountability_date')
                                     ->label('Accountability Date')
                                     ->placeholder('Date assumed accountability')
@@ -344,25 +356,25 @@ class RpciResource extends Resource
                                             ->label('Article')
                                             ->disabled()
                                             ->dehydrated()
-                                            ->columnSpan(1)
+                                            ->columnSpan(2)
                                             ->maxLength(255),
                                         Forms\Components\TextInput::make('description')
                                             ->label('Description')
                                             ->disabled()
                                             ->dehydrated()
-                                            ->columnSpan(2)
+                                            ->columnSpan(3)
                                             ->maxLength(255),
                                         Forms\Components\TextInput::make('stock_number')
                                             ->label('Stock No.')
                                             ->disabled()
                                             ->dehydrated()
-                                            ->columnSpan(1)
+                                            ->columnSpan(2)
                                             ->maxLength(255),
                                         Forms\Components\TextInput::make('unit_of_measure')
                                             ->label('Unit of Measure')
                                             ->disabled()
                                             ->dehydrated()
-                                            ->columnSpan(1)
+                                            ->columnSpan(2)
                                             ->maxLength(50),
                                         Forms\Components\TextInput::make('unit_value')
                                             ->label('Unit Value')
@@ -371,19 +383,19 @@ class RpciResource extends Resource
                                             ->dehydrated()
                                             ->prefix('₱')
                                             ->default(0)
-                                            ->columnSpan(1),
+                                            ->columnSpan(2),
                                         Forms\Components\TextInput::make('balance_per_card')
                                             ->label('Balance Per Card')
                                             ->numeric()
                                             ->disabled()
                                             ->dehydrated()
                                             ->default(0)
-                                            ->columnSpan(1),
+                                            ->columnSpan(2),
                                         Forms\Components\TextInput::make('on_hand_per_count')
                                             ->label('On Hand Per Count')
                                             ->numeric()
                                             ->nullable()
-                                            ->columnSpan(1)
+                                            ->columnSpan(2)
                                             ->live(onBlur: true)
                                             ->afterStateUpdated(function ($state, callable $set, callable $get) {
                                                 // No physical count recorded yet — keep the shortage fields blank.
@@ -406,7 +418,7 @@ class RpciResource extends Resource
                                             ->nullable()
                                             ->disabled()
                                             ->dehydrated()
-                                            ->columnSpan(1),
+                                            ->columnSpan(2),
                                         Forms\Components\TextInput::make('shortage_value')
                                             ->label('S/O Value')
                                             ->numeric()
@@ -414,7 +426,7 @@ class RpciResource extends Resource
                                             ->disabled()
                                             ->dehydrated()
                                             ->prefix('₱')
-                                            ->columnSpan(1),
+                                            ->columnSpan(2),
                                         Forms\Components\TextInput::make('remarks')
                                             ->label('Remarks')
                                             ->columnSpan(2)
@@ -423,8 +435,9 @@ class RpciResource extends Resource
                                     ]),
                             ])
                             ->defaultItems(0)
-                            ->addActionLabel('Add Item')
-                            ->reorderableWithButtons()
+                            ->addable(false)
+                            ->deletable(false)
+                            ->reorderable(false)
                             ->cloneable()
                             ->collapsible(),
                     ]),
@@ -436,23 +449,62 @@ class RpciResource extends Resource
                             ->schema([
                                 Forms\Components\Fieldset::make('Inventory Committee Chairman')
                                     ->schema([
-                                        Forms\Components\TextInput::make('chairman_name')
+                                        Forms\Components\Select::make('chairman_name')
                                             ->label('Name')
-                                            ->maxLength(255)
+                                            ->options([
+                                                 'Carlo Mario A. Hofeliña' => 'Carlo Mario A. Hofeliña',
+                                                 'Anna May B. Pahilagao' => 'Anna May B. Pahilagao',
+                                                 'Rhodelia J. Mandolado' => 'Rhodelia J. Mandolado',
+                                                 'Rodel C. Linugao' => 'Rodel C. Linugao',
+                                                 'Wesley C. Calamba' => 'Wesley C. Calamba',
+                                                 'Mohammad Ali C. Usman' => 'Mohammad Ali C. Usman',
+                                                 'Cherrie Lyn C. Olaco' => 'Cherrie Lyn C. Olaco',
+                                                 'Tessa May S. Balane' => 'Tessa May S. Balane',
+                                                 'Ana Fe B. Galanto' => 'Ana Fe B. Galanto',
+                                                 'Rosie D. Noleal' => 'Rosie D. Noleal',
+                                                 'Romula M. Lakim' => 'Romula M. Lakim',
+                                            ])
+                                            ->searchable()
                                             ->required(),
                                     ]),
                                 Forms\Components\Fieldset::make('Inventory Committee Member 1')
                                     ->schema([
-                                        Forms\Components\TextInput::make('member_one_name')
+                                        Forms\Components\Select::make('member_one_name')
                                             ->label('Name')
-                                            ->maxLength(255)
+                                            ->options([
+                                                 'Anna May B. Pahilagao' => 'Anna May B. Pahilagao',
+                                                 'Rhodelia J. Mandolado' => 'Rhodelia J. Mandolado',
+                                                 'Rodel C. Linugao' => 'Rodel C. Linugao',
+                                                 'Wesley C. Calamba' => 'Wesley C. Calamba',
+                                                 'Mohammad Ali C. Usman' => 'Mohammad Ali C. Usman',
+                                                 'Cherrie Lyn C. Olaco' => 'Cherrie Lyn C. Olaco',
+                                                 'Tessa May S. Balane' => 'Tessa May S. Balane',
+                                                 'Ana Fe B. Galanto' => 'Ana Fe B. Galanto',
+                                                 'Rosie D. Noleal' => 'Rosie D. Noleal',
+                                                 'Romula M. Lakim' => 'Romula M. Lakim',
+                                                 'Carlo Mario A. Hofeliña' => 'Carlo Mario A. Hofeliña',
+                                            ])
+                                            ->searchable()
                                             ->required(),
                                     ]),
                                 Forms\Components\Fieldset::make('Inventory Committee Member 2')
                                     ->schema([
-                                        Forms\Components\TextInput::make('member_two_name')
+                                        Forms\Components\Select::make('member_two_name')
                                             ->label('Name')
-                                            ->maxLength(255)
+                                            ->options([
+                                                 'Ana Fe B. Galanto' => 'Ana Fe B. Galanto',
+                                                 'Rosie D. Noleal' => 'Rosie D. Noleal',
+                                                 'Romula M. Lakim' => 'Romula M. Lakim',
+                                                 'Carlo Mario A. Hofeliña' => 'Carlo Mario A. Hofeliña',
+                                                 'Anna May B. Pahilagao' => 'Anna May B. Pahilagao',
+                                                 'Rhodelia J. Mandolado' => 'Rhodelia J. Mandolado',
+                                                 'Rodel C. Linugao' => 'Rodel C. Linugao',
+                                                 'Wesley C. Calamba' => 'Wesley C. Calamba',
+                                                 'Mohammad Ali C. Usman' => 'Mohammad Ali C. Usman',
+                                                 'Cherrie Lyn C. Olaco' => 'Cherrie Lyn C. Olaco',
+                                                 'Tessa May S. Balane' => 'Tessa May S. Balane',
+                                            ])
+                                            ->searchable()
                                             ->required(),
                                     ]),
                             ]),
@@ -460,25 +512,30 @@ class RpciResource extends Resource
                             ->schema([
                                 Forms\Components\Fieldset::make('Approved by (Head of Agency / Authorized Representative)')
                                     ->schema([
-                                        Forms\Components\TextInput::make('approved_by')
+                                        Forms\Components\Select::make('approved_by')
                                             ->label('Name')
-                                            ->maxLength(255)
+                                            ->options([
+                                                 'Atty. Keysie M. Gomez' => 'Atty. Keysie M. Gomez',
+                                                 'Atty. Benedict Mananguit' => 'Atty. Benedict Mananguit',
+                                                 'Atty. Reuben P. Escarlan' => 'Atty. Reuben P. Escarlan',
+                                                 'Atty. Stephanie D. Publico-Lopez' => 'Atty. Stephanie D. Publico-Lopez',
+                                                 'Atty. Mae P. Galong' => 'Atty. Mae P. Galong',
+                                            ])
+                                            ->searchable()
                                             ->required(),
-                                        Forms\Components\TextInput::make('approved_position')
-                                            ->label('Designation')
-                                            ->maxLength(255)
-                                            ->required(),
+                                        //Forms\Components\TextInput::make('approved_position')
+                                           // ->label('Designation')
+                                           // ->required(),
                                     ]),
                                 Forms\Components\Fieldset::make('Verified by (COA Representative)')
                                     ->schema([
                                         Forms\Components\TextInput::make('verified_by')
                                             ->label('Name')
-                                            ->maxLength(255)
+                                            ->placeholder('Full name of verified representative')
                                             ->required(),
-                                        Forms\Components\TextInput::make('verified_position')
-                                            ->label('Designation')
-                                            ->maxLength(255)
-                                            ->required(),
+                                        //Forms\Components\TextInput::make('verified_position')
+                                           // ->label('Designation')
+                                           // ->maxLength(255),
                                     ]),
                             ]),
                         Forms\Components\Grid::make(2)
@@ -486,7 +543,9 @@ class RpciResource extends Resource
                                 Forms\Components\TextInput::make('created_by')
                                     ->label('Created By')
                                     ->default(fn () => CurrentUser::get()?->name)
-                                    ->maxLength(255),
+                                    ->maxLength(255)
+                                    ->disabled()
+                                    ->dehydrated(true),
                                 Forms\Components\Textarea::make('remarks')
                                     ->label('Remarks / Notes')
                                     ->columnSpan(1),
@@ -574,8 +633,9 @@ class RpciResource extends Resource
                     ->visible(fn (Rpci $record): bool =>
                         CurrentUser::get()?->hasPermissionTo('rpcis.update') && ! $record->isFinalized()),
                 Tables\Actions\Action::make('print')
-                    ->label('Print RPCI')
+                    ->label('Print RPCI Report')
                     ->icon('heroicon-o-printer')
+                    ->visible(fn (): bool => (bool) CurrentUser::get()?->hasPermissionTo('rpcis.print'))
                     ->url(fn (Rpci $record): string => route('rpci.print', $record))
                     ->openUrlInNewTab(),
                 Tables\Actions\Action::make('finalize')
@@ -592,7 +652,7 @@ class RpciResource extends Resource
                         Notification::make()
                             ->success()
                             ->title('Report Finalized')
-                            ->body("RPCI {$record->report_no} has been finalized.")
+                            ->body("RPCI Report {$record->report_no} has been finalized.")
                             ->send();
                     }),
                 Tables\Actions\DeleteAction::make()
@@ -624,20 +684,5 @@ class RpciResource extends Resource
         ];
     }
 
-    /**
-     * Get the navigation badge showing total RPCI count.
-     */
-    public static function getNavigationBadge(): ?string
-    {
-        $total = static::getModel()::count();
 
-        return $total > 0 ? (string) $total : null;
-    }
-
-    public static function getNavigationBadgeColor(): ?string
-    {
-        $pending = static::getModel()::where('status', 'draft')->count();
-
-        return $pending > 0 ? 'warning' : null;
-    }
 }

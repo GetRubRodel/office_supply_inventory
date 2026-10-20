@@ -3,204 +3,265 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>RPCI - {{ $rpci->report_no }}</title>
+    <title>RPCI Report - {{ $rpci->report_no }}</title>
     <style>
-        @page {
-            size: Legal landscape;
-            margin: 12mm 15mm 15mm 15mm;
+    @page {
+        size: A4 landscape;
+        margin: 12.7mm;
+    }
+
+    * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+    }
+
+    body {
+        font-family: Arial, Helvetica, sans-serif;
+        font-size: 11pt;
+        line-height: 1.4;
+        color: #000;
+    }
+
+    .container {
+        width: 100%;
+        max-width: none;
+        margin: 0 auto;
+    }
+
+    .header {
+        text-align: center;
+        margin-bottom: 8px;
+    }
+
+    .header .appendix {
+        font-size: 10pt;
+        font-weight: bold;
+        text-align: right;
+    }
+
+    .header .title {
+        font-size: 16pt;
+        font-weight: bold;
+        letter-spacing: 1px;
+        margin: 4px 0;
+        text-transform: uppercase;
+    }
+
+    .header .sub-title {
+        font-size: 10pt;
+        font-style: italic;
+    }
+
+    .header .as-of {
+        font-size: 11pt;
+        font-weight: bold;
+        margin-top: 3px;
+    }
+
+    /* BORDERED BOX */
+    .bordered-box {
+        border: 1px solid #000;
+    }
+
+    .bordered-row {
+        display: flex;
+        border-bottom: 1px solid #000;
+    }
+
+    .bordered-row:last-child {
+        border-bottom: none;
+    }
+
+    .bordered-cell {
+        padding: 4px 6px;
+        border-right: 1px solid #000;
+        min-height: 30px;
+    }
+
+    .bordered-cell:last-child {
+        border-right: none;
+    }
+
+    .bordered-cell .field-label {
+        font-size: 10pt;
+        font-weight: bold;
+    }
+
+    .bordered-cell .field-value {
+        border-bottom: 1px solid #000;
+        min-height: 20px;
+        padding: 2px 3px;
+        margin-top: 2px;
+        font-size: 11pt;
+        font-weight: bold;
+    }
+
+    .bordered-cell .field-value-plain {
+        font-size: 11pt;
+        font-weight: bold;
+        padding: 2px 3px;
+        min-height: 20px;
+    }
+
+    /* ITEMS TABLE */
+    table.items {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 5px;
+        font-size: 10pt;
+        border: 1px solid #000;
+        /*
+         * Column widths are declared once, in the shared
+         * rpci/partials/items-colgroup partial, and are shared by the body
+         * table and the TOTALS table below.
+         *
+         * `table-layout: fixed` makes that <colgroup> authoritative: column
+         * widths are taken from it and are NOT re-negotiated from cell
+         * content. Without it the browser sizes each table independently, so
+         * the TOTALS table drifts out of line with the body table (the
+         * Balance Per Card total then renders under the wrong column) and
+         * long descriptions stretch the Remarks column.
+         */
+        table-layout: fixed;
+    }
+
+    table.items th,
+    table.items td {
+        border: 1px solid #000;
+        padding: 4px 3px;
+        text-align: center;
+        vertical-align: middle;
+        /* Fixed layout must not be allowed to overflow its column. */
+        overflow-wrap: break-word;
+        word-break: break-word;
+    }
+
+    table.items thead th {
+        font-weight: bold;
+        font-size: 10pt;
+        background: #f0f0f0;
+    }
+
+    table.items td.left {
+        text-align: left;
+        padding-left: 4px;
+    }
+
+    table.items td.right {
+        text-align: right;
+        padding-right: 4px;
+    }
+
+    /* TOTALS ROW — one <td> per column, mirroring the body table exactly.
+       Never merge cells here: a colspan (merged) cell makes the browser
+       redistribute width across the spanned columns and pulls the totals out
+       of alignment with the headers above. */
+    table.items tr.totals-row > td {
+        font-weight: bold;
+        background: #f0f0f0;
+    }
+
+    table.items tr.totals-row > td.totals-label {
+        text-align: right;
+        padding-right: 5px;
+    }
+
+    /* CERTIFICATION */
+    .cert-section {
+        border: 1px solid #000;
+        border-top: none;
+    }
+
+    .cert-title-row {
+        text-align: center;
+        font-weight: bold;
+        font-size: 11pt;
+        padding: 4px;
+        text-transform: uppercase;
+        border-bottom: 1px solid #000;
+    }
+
+    .cert-grid {
+        display: flex;
+        flex-wrap: wrap;
+    }
+
+    .cert-box {
+        flex: 1;
+        min-width: 33.33%;
+        padding: 8px 10px;
+        border-right: 1px solid #000;
+        min-height: 110px;
+    }
+
+    .cert-box:last-child {
+        border-right: none;
+    }
+
+    .cert-box .cert-role {
+        font-weight: bold;
+        font-size: 10pt;
+        margin-bottom: 4px;
+        text-align: center;
+    }
+
+    .cert-box .sig-line {
+        border-bottom: 1px solid #000;
+        height: 32px;
+        margin: 3px auto;
+        width: 85%;
+    }
+
+    .cert-box .cert-name {
+        border-bottom: 1px solid #000;
+        min-height: 18px;
+        padding: 0 3px;
+        font-size: 10pt;
+        font-weight: bold;
+        text-align: center;
+        margin-bottom: 2px;
+    }
+
+    .cert-box .cert-label {
+        font-size: 9pt;
+        text-align: center;
+    }
+
+    /* FOOTER */
+    .footer-section {
+        border: 1px solid #000;
+        border-top: none;
+        padding: 4px 7px;
+        font-size: 9pt;
+        text-align: center;
+    }
+
+    .no-print {
+        display: block;
+    }
+
+    /* PRINT */
+    @media print {
+        .no-print {
+            display: none;
         }
-        * { box-sizing: border-box; margin: 0; padding: 0; }
+
         body {
-            font-family: 'Times New Roman', Times, serif;
-            font-size: 8.5pt;
-            line-height: 1.15;
-            color: #000;
-        }
-        .container {
-            width: 100%;
-            max-width: 330mm;
-            margin: 0 auto;
+            font-family: Arial, Helvetica, sans-serif;
+            font-size: 11pt;
         }
 
-        /* ─── HEADER ─────────────────────────────────────── */
-        .header {
-            text-align: center;
-            margin-bottom: 6px;
-        }
-        .header .appendix {
-            font-size: 8pt;
-            font-weight: bold;
-            text-align: right;
-        }
-        .header .title {
-            font-size: 13pt;
-            font-weight: bold;
-            letter-spacing: 1px;
-            margin: 3px 0;
-            text-transform: uppercase;
-        }
-        .header .sub-title {
-            font-size: 8pt;
-            font-style: italic;
-        }
-        .header .as-of {
-            font-size: 9pt;
-            font-weight: bold;
-            margin-top: 2px;
-        }
-
-        /* ─── BORDERED BOX (Info Section) ──────────────── */
-        .bordered-box {
-            border: 1px solid #000;
-        }
-        .bordered-row {
-            display: flex;
-            border-bottom: 1px solid #000;
-        }
-        .bordered-row:last-child {
-            border-bottom: none;
-        }
-        .bordered-cell {
-            padding: 2px 5px;
-            border-right: 1px solid #000;
-            min-height: 24px;
-        }
-        .bordered-cell:last-child {
-            border-right: none;
-        }
-        .bordered-cell .field-label {
-            font-size: 7.5pt;
-            font-weight: bold;
-        }
-        .bordered-cell .field-value {
-            border-bottom: 1px solid #000;
-            min-height: 18px;
-            padding: 1px 3px;
-            margin-top: 1px;
-            font-size: 9pt;
-            font-weight: bold;
-        }
-        .bordered-cell .field-value-plain {
-            font-size: 9pt;
-            font-weight: bold;
-            padding: 1px 3px;
-            min-height: 18px;
-        }
-
-        /* ─── ITEMS TABLE ─────────────────────────────────── */
         table.items {
-            width: 100%;
-            border-collapse: collapse;
-            margin-top: 4px;
-            font-size: 7.8pt;
-            border: 1px solid #000;
-        }
-        table.items th, table.items td {
-            border: 1px solid #000;
-            padding: 2px 2px;
-            text-align: center;
-            vertical-align: middle;
-        }
-        table.items thead th {
-            font-weight: bold;
-            font-size: 7.5pt;
-            background: #f0f0f0;
-        }
-        table.items td.left {
-            text-align: left;
-            padding-left: 3px;
-        }
-        table.items td.right {
-            text-align: right;
-            padding-right: 3px;
+            font-size: 10pt;
         }
 
-        /* Column widths: 10 columns */
-        .col-art   { width: 8%; }
-        .col-desc  { width: 16%; }
-        .col-stock { width: 8%; }
-        .col-uom   { width: 6%; }
-        .col-uv    { width: 8%; }
-        .col-bpc   { width: 8%; }
-        .col-ohpc  { width: 8%; }
-        .col-soq   { width: 8%; }
-        .col-sov   { width: 9%; }
-        .col-rem   { width: 12%; }
-
-        /* ─── CERTIFICATION (3-column layout) ──────────── */
-        .cert-section {
-            border: 1px solid #000;
-            border-top: none;
+        @page {
+            size: A4 landscape;
+            margin: 12.7mm;
         }
-        .cert-title-row {
-            text-align: center;
-            font-weight: bold;
-            font-size: 9pt;
-            padding: 3px;
-            text-transform: uppercase;
-            border-bottom: 1px solid #000;
-        }
-        .cert-grid {
-            display: flex;
-            flex-wrap: wrap;
-        }
-        .cert-box {
-            flex: 1;
-            min-width: 33.33%;
-            padding: 6px 8px;
-            border-right: 1px solid #000;
-            min-height: 95px;
-        }
-        .cert-box:last-child {
-            border-right: none;
-        }
-        .cert-box .cert-role {
-            font-weight: bold;
-            font-size: 7.5pt;
-            margin-bottom: 3px;
-            text-align: center;
-        }
-        .cert-box .sig-line {
-            border-bottom: 1px solid #000;
-            height: 28px;
-            margin: 2px auto;
-            width: 85%;
-        }
-        .cert-box .cert-name {
-            border-bottom: 1px solid #000;
-            min-height: 16px;
-            padding: 0 3px;
-            font-size: 8pt;
-            font-weight: bold;
-            text-align: center;
-            margin-bottom: 1px;
-        }
-        .cert-box .cert-label {
-            font-size: 7pt;
-            text-align: center;
-        }
-
-        /* ─── FOOTER ──────────────────────────────────────── */
-        .footer-section {
-            border: 1px solid #000;
-            border-top: none;
-            padding: 3px 6px;
-            font-size: 7pt;
-            text-align: center;
-        }
-
-        .no-print { display: block; }
-
-        @media print {
-            .no-print { display: none; }
-            body { font-size: 8pt; }
-            table.items { font-size: 7.5pt; }
-            @page {
-                size: Legal landscape;
-                margin: 12mm 15mm 15mm 15mm;
-            }
-        }
-    </style>
+    }
+</style>
 </head>
 <body>
     <div class="container">
@@ -217,45 +278,38 @@
             {{-- Row 1: Fund Cluster --}}
             <div class="bordered-row">
                 <div class="bordered-cell" style="flex: 1;">
-                    <div class="field-label">Fund Cluster :</div>
-                    <div class="field-value">{{ $rpci->fund_cluster ?? '___________________________' }}</div>
+                    <div class="field-label">Fund Cluster : {{ $rpci->fund_cluster ?? '' }}</div>
                 </div>
             </div>
 
             {{-- Row 2: For which [person] [position] [office] is accountable --}}
             <div class="bordered-row">
-                <div class="bordered-cell" style="flex: 1;">
-                    <div style="font-size: 7.5pt; font-weight: bold; margin-bottom: 2px;">For which</div>
-                    <div class="field-value">{{ $rpci->accountable_person ?? '___________________________' }}</div>
-                    <div style="font-size: 7.5pt; font-weight: bold; margin-top: 2px; margin-bottom: 2px;"></div>
-                    <div class="field-value">{{ $rpci->accountable_position ?? '___________________________' }}</div>
-                    <div style="font-size: 7.5pt; margin-top: 1px;">CHR Region XII</div>
-                </div>
-            </div>
-
-            {{-- Row 3: Accountability date --}}
-            <div class="bordered-row">
-                <div class="bordered-cell" style="flex: 1;">
-                    <div class="field-label">is accountable, having assumed such accountability on</div>
-                    <div class="field-value">{{ $rpci->accountability_date ? $rpci->accountability_date->format('F j, Y') : '___________________________' }}</div>
-                </div>
-            </div>
+              <p style="font-size: 8pt; margin: 5px 0; line-height: 1.4;">
+                 <strong>
+                    For which
+                     {{ $rpci->accountable_person ?? '___________________________' }},
+                     {{ $rpci->accountable_position ?? '___________________________' }}/
+                    Supply Officer Designate, CHR Region XII is accountable, having assumed such accountability on
+                     {{ $rpci->accountability_date ? $rpci->accountability_date->format('F j, Y') : '___________________________' }}.
+                </strong>
+              </p>
         </div>
 
         {{-- ======== ITEMS TABLE ======== --}}
         <table class="items">
+            @include('rpci.partials.items-colgroup')
             <thead>
                 <tr>
-                    <th class="col-art">Article</th>
-                    <th class="col-desc">Description</th>
-                    <th class="col-stock">Stock Number</th>
-                    <th class="col-uom">Unit of Measure</th>
-                    <th class="col-uv">Unit Value (₱)</th>
-                    <th class="col-bpc">Balance Per Card (Qty)</th>
-                    <th class="col-ohpc">On Hand Per Count (Qty)</th>
-                    <th class="col-soq">Shortage / Overage (Qty)</th>
-                    <th class="col-sov">Shortage / Overage (Value ₱)</th>
-                    <th class="col-rem">Remarks</th>
+                    <th>Article</th>
+                    <th>Description</th>
+                    <th>Stock Number</th>
+                    <th>Unit of Measure</th>
+                    <th>Unit Value (₱)</th>
+                    <th>Balance Per Card (Qty)</th>
+                    <th>On Hand Per Count (Qty)</th>
+                    <th>Shortage / Overage (Qty)</th>
+                    <th>Shortage / Overage (Value ₱)</th>
+                    <th>Remarks</th>
                 </tr>
             </thead>
             <tbody>
@@ -322,15 +376,34 @@
             $totalSoQty = $items->sum('shortage_quantity');
             $totalSoVal = $items->sum('shortage_value');
         @endphp
+        {{--
+            This is a separate <table> so it can sit flush against the body
+            table, but it reuses the body's <colgroup> and `table-layout: fixed`
+            so its columns land on exactly the same x-positions as the headers.
+
+            It emits one <td> per column, in the same order as the header, with
+            NO colspan/merged cells. Each total therefore sits directly beneath
+            the column it belongs to:
+              6 Balance Per Card (Qty)          -> $totalBpc
+              7 On Hand Per Count (Qty)         -> $totalOhpc
+              8 Shortage / Overage (Qty)        -> $totalSoQty
+              9 Shortage / Overage (Value)      -> $totalSoVal
+             10 Remarks                         -> blank
+        --}}
         <table class="items" style="margin-top: -1px;">
+            @include('rpci.partials.items-colgroup')
             <tfoot>
-                <tr style="font-weight: bold; background: #f0f0f0;">
-                    <td colspan="5" style="text-align: right; padding-right: 5px;">TOTALS</td>
+                <tr class="totals-row">
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                    <td class="totals-label">TOTALS</td>
                     <td>{{ number_format($totalBpc) }}</td>
                     <td>{{ number_format($totalOhpc) }}</td>
                     <td>{{ number_format($totalSoQty) }}</td>
                     <td class="right">{{ number_format($totalSoVal, 2) }}</td>
-                    <td>&nbsp;</td>
+                    <td></td>
                 </tr>
             </tfoot>
         </table>
@@ -373,7 +446,6 @@
                     <div class="sig-line" style="margin-top: 8px;"></div>
                     <div class="cert-name">{{ $rpci->approved_by ?? '____________________________' }}</div>
                     <div class="cert-label">Printed Name and Signature</div>
-                    <div class="cert-name" style="margin-top: 4px;">{{ $rpci->approved_position ?? '____________________________' }}</div>
                     <div class="cert-label">Head of Agency / Authorized Representative</div>
                 </div>
 
@@ -383,7 +455,6 @@
                     <div class="sig-line" style="margin-top: 8px;"></div>
                     <div class="cert-name">{{ $rpci->verified_by ?? '____________________________' }}</div>
                     <div class="cert-label">Printed Name and Signature</div>
-                    <div class="cert-name" style="margin-top: 4px;">{{ $rpci->verified_position ?? '____________________________' }}</div>
                     <div class="cert-label">COA Representative</div>
                 </div>
             </div>
@@ -391,7 +462,7 @@
 
         {{-- ======== FOOTER ======== --}}
         <div class="footer-section">
-            <div>CHR-ROXII-ASD-FR-009 | Page 1 of 1 | Revision 0 | Effectivity Date: {{ now()->format('F j, Y') }}</div>
+            <div>CHR-ROXII-ASD-FR-009 | Page 1 of 1 | Revision 0 | Effectivity Date: {{ \App\Support\ReportClock::format('F j, Y') }}</div>
         </div>
 
         {{-- ======== PRINT BUTTONS ======== --}}

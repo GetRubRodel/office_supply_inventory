@@ -18,9 +18,7 @@ class ListPurchaseRequests extends ListRecords
         return [
             Actions\CreateAction::make()
                 ->visible(fn (): bool =>
-                    ! CurrentUser::get()?->isRegionalDirector()
-                    && ! CurrentUser::get()?->isPropertyCustodian()
-                    && ! CurrentUser::get()?->isDivisionChief()),
+                    CurrentUser::get()?->hasPermissionTo('purchase_requests.create') ?? false),
         ];
     }
 

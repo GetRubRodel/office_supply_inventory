@@ -29,9 +29,18 @@ class StockInRecord extends Model
 
     public static function generateReferenceNumber(): string
     {
+        // Portable equivalent of the MySQL-only
+        // MAX(CAST(SUBSTRING_INDEX(reference_number, "-", -1) AS UNSIGNED)):
+        // computes the highest trailing sequence across all reference numbers
+        // and increments it. Works on MySQL and SQLite alike.
         $maxSeq = DB::table('stock_in_records')
-            ->select(DB::raw('MAX(CAST(SUBSTRING_INDEX(reference_number, "-", -1) AS UNSIGNED)) as max_seq'))
-            ->value('max_seq');
+            ->pluck('reference_number')
+            ->map(function (string $referenceNumber): int {
+                $parts = explode('-', $referenceNumber);
+
+                return (int) end($parts);
+            })
+            ->max();
 
         $seq = ($maxSeq ?? 0) + 1;
 

@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\RequestForQuotationResource\Pages;
 
 use App\Filament\Resources\RequestForQuotationResource;
+use App\Models\RequestForQuotation;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\CreateRecord;
 
@@ -18,7 +19,7 @@ class CreateRequestForQuotation extends CreateRecord
             Notification::make()
                 ->warning()
                 ->title('Cannot create Request for Quotation')
-                ->body('No approved Purchase Request is available. Please create an approved Purchase Request before creating a Request for Quotation.')
+                ->body(RequestForQuotation::NO_ELIGIBLE_PR_MESSAGE)
                 ->send();
 
             $this->redirect(RequestForQuotationResource::getUrl('index'));
@@ -31,6 +32,6 @@ class CreateRequestForQuotation extends CreateRecord
 
     protected function getRedirectUrl(): string
     {
-        return $this->getResource()::getUrl('view', ['record' => $this->record]);
+        return $this->getResource()::getUrl('index');
     }
 }

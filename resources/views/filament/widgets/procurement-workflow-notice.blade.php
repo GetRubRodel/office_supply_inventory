@@ -1,6 +1,6 @@
 <div>
     @if ($blocked)
-        <div class="rounded-xl bg-warning-50 p-4 ring-1 ring-inset ring-warning-600/20 dark:bg-warning-400/10 dark:ring-warning-500/30">
+        <div class="fi-procurement-blocked-notice rounded-xl bg-warning-50 p-4 ring-1 ring-inset ring-warning-600/20 dark:bg-warning-400/10 dark:ring-warning-500/30">
             <div class="flex gap-3">
                 <x-filament::icon
                     icon="heroicon-o-exclamation-triangle"

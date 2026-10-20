@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>RPCI Preview - {{ $rpci->report_no }}</title>
+    <title>RPCI Report Preview - {{ $rpci->report_no }}</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body {
@@ -111,7 +111,7 @@
     {{-- Toolbar --}}
     <div class="toolbar">
         <div class="toolbar-title">
-            RPCI Preview: <span>{{ $rpci->report_no }}</span>
+            RPCI Report Preview: <span>{{ $rpci->report_no }}</span>
         </div>
         <div class="toolbar-actions">
             <button class="btn-print" onclick="window.print()">

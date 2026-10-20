@@ -27,11 +27,21 @@ class CategoryPolicy
 
     public function update(User $user, Category $category): bool
     {
+        // Division Chief may not update Category records.
+        if ($user->isDivisionChief()) {
+            return false;
+        }
+
         return $user->hasPermissionTo('categories.update');
     }
 
     public function delete(User $user, Category $category): bool
     {
+        // Supply Officer may not delete Category records.
+        if ($user->isSupplyOfficer()) {
+            return false;
+        }
+
         return $user->hasPermissionTo('categories.delete');
     }
 }

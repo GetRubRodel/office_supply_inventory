@@ -30,6 +30,12 @@ class Register extends BaseRegister
                             ))
                             ->placeholder('Select your Division')
                             ->required(),
+                        Forms\Components\Select::make('position')
+                            ->label('Position')
+                            ->options(User::positionOptions())
+                            ->placeholder('Select your Position')
+                            ->searchable()
+                            ->required(),
                     ])
                     ->statePath('data'),
             ),

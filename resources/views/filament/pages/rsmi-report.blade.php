@@ -16,7 +16,7 @@
         $items = $this->getIssuedItems();
         $recap = $this->getRecapitulation($items);
         $grandTotalQty = $items->sum('quantity_issued');
-        $grandTotalAmt = $items->sum(fn ($i) => $i->quantity_issued * (float) ($i->price ?? $i->supply?->unit_price ?? 0));
+        $grandTotalAmt = $items->sum(fn ($i) => $i->quantity_issued * $i->unit_cost_for_issuance);
         $dateFrom = $this->filters['date_from'] ?? null;
         $dateTo = $this->filters['date_to'] ?? null;
     @endphp
@@ -39,7 +39,7 @@
                 <tbody class="divide-y divide-gray-200">
                     @foreach($items as $item)
                         @php
-                            $unitCost = (float) ($item->price ?? $item->supply?->unit_price ?? 0);
+                            $unitCost = $item->unit_cost_for_issuance;
                             $amount = $item->quantity_issued * $unitCost;
                         @endphp
                         <tr class="hover:bg-gray-50">
